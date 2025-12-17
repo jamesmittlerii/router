@@ -210,6 +210,10 @@ def main() -> None:
     piano_ids = []
     active_piano = None
 
+    # Track resources for cleanup
+    loaded_ids: list[int] = []
+    active_connections: list[tuple[str, str]] = []
+
     # 1) Add plugins (sorted by numeric id for deterministic behavior)
     for sid in sorted(plugins.keys(), key=lambda x: int(x)):
         p = plugins[sid]
@@ -221,6 +225,7 @@ def main() -> None:
         print(f'== add {inst} {uri}')
         try:
             mod_add(uri, inst)
+            loaded_ids.append(inst)
         except Exception as e:
             print(f"Failed to add plugin {inst}: {e}")
 
@@ -268,6 +273,7 @@ def main() -> None:
         print(f"== connect {src} -> {dst}")
         try:
             mod_connect(src, dst)
+            active_connections.append((src, dst))
         except Exception as e:
              print(f"Failed connect {src}->{dst}: {e}")
 
@@ -350,6 +356,10 @@ def main() -> None:
             if msg is None:
                 continue
 
+            # Debug print
+            print(f"Received: {msg!r}")
+
+
             if msg.type != "program_change":
                 continue
 
@@ -383,6 +393,26 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nStopping...")
     finally:
+        print("\n== Cleaning Up Session ==")
+        
+        # 1. Disconnect ports
+        for src, dst in reversed(active_connections):
+            try:
+                # We use send_cmd directly to avoid our helper strict checks if desired,
+                # but standard cleanup is fine.
+                print(f"Disconnecting {src} -> {dst}")
+                send_cmd(f'disconnect "{src}" "{dst}"')
+            except Exception as e:
+                print(f"Failed to disconnect {src}->{dst}: {e}")
+                
+        # 2. Remove plugins
+        for inst in reversed(loaded_ids):
+            try:
+                print(f"Removing plugin {inst}")
+                send_cmd(f"remove {inst}")
+            except Exception as e:
+                print(f"Failed to remove plugin {inst}: {e}")
+
         try:
             client.deactivate()
         except:
