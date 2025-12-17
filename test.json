@@ -75,6 +75,34 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/JRhodes3d-st-no-xfade/jRhodes3d-st-no-xfade.sfz"
       }
     },
+     "37": {
+      "uri": "http://calf.sourceforge.net/plugins/Saturator",
+      "symbol": "saturator",
+      "bypass": true,
+      "x": 350,
+      "y": 200
+    },
+     "38": {
+      "uri": "http://lsp-plug.in/plugins/lv2/para_equalizer_x16_stereo",
+      "symbol": "eq",
+      "bypass": true,
+      "x": 350,
+      "y": 200
+    },
+     "39": {
+      "uri": "http://calf.sourceforge.net/plugins/Compressor",
+      "symbol": "compressor",
+      "bypass": true,
+      "x": 350,
+      "y": 200
+    },
+     "40": {
+      "uri": "http://calf.sourceforge.net/plugins/Pulsator",
+      "symbol": "pulsator",
+      "bypass": true,
+      "x": 350,
+      "y": 200
+    },
     "41": {
       "uri": "http://calf.sourceforge.net/plugins/MultiChorus",
       "symbol": "chorus",
@@ -84,6 +112,7 @@
     "42": {
       "uri": "http://calf.sourceforge.net/plugins/Reverb",
       "symbol": "reverb",
+      "bypass": true,
       "x": 600,
       "y": 200
     },
@@ -95,7 +124,15 @@
       "controls": {
         "Gain": -10.0
       }
+    },
+    "44": {
+      "uri": "http://lsp-plug.in/plugins/lv2/limiter_stereo",
+      "symbol": "limiter",
+      "bypass": true,
+      "x": 850,
+      "y": 200
     }
+
   },
   "connections": [
     {
@@ -128,58 +165,90 @@
     },
     {
       "from": "10:out_left",
-      "to": "41:in_l"
+      "to": "37:in_l"
     },
     {
       "from": "10:out_right",
-      "to": "41:in_r"
+      "to": "37:in_r"
     },
     {
       "from": "11:out_left",
-      "to": "41:in_l"
+      "to": "37:in_l"
     },
     {
       "from": "11:out_right",
-      "to": "41:in_r"
+      "to": "37:in_r"
     },
     {
       "from": "12:out_left",
-      "to": "41:in_l"
+      "to": "37:in_l"
     },
     {
       "from": "12:out_right",
-      "to": "41:in_r"
+      "to": "37:in_r"
     },
     {
       "from": "13:out_left",
-      "to": "41:in_l"
+      "to": "37:in_l"
     },
     {
       "from": "13:out_right",
-      "to": "41:in_r"
+      "to": "37:in_r"
     },
     {
       "from": "14:out_left",
-      "to": "41:in_l"
+      "to": "37:in_l"
     },
     {
       "from": "14:out_right",
-      "to": "41:in_r"
+      "to": "37:in_r"
     },
     {
       "from": "15:out_left",
-      "to": "41:in_l"
+      "to": "37:in_l"
     },
     {
       "from": "15:out_right",
-      "to": "41:in_r"
+      "to": "37:in_r"
     },
     {
       "from": "16:out_left",
-      "to": "41:in_l"
+      "to": "37:in_l"
     },
     {
       "from": "16:out_right",
+      "to": "37:in_r"
+    },
+    { 
+      "from": "37:out_l",
+      "to": "38:in_l"
+    },
+    { 
+      "from": "37:out_r",
+      "to": "38:in_r"
+    },
+    {
+      "from": "38:out_l",
+      "to": "39:in_l"
+    },
+    {
+      "from": "38:out_r",
+      "to": "39:in_r"
+    },
+    {
+      "from": "39:out_l",
+      "to": "40:in_l"
+    },
+    {
+      "from": "39:out_r",
+      "to": "40:in_r"
+    },
+    {
+      "from": "40:out_l",
+      "to": "41:in_l"
+    },
+    {
+      "from": "40:out_r",
       "to": "41:in_r"
     },
     {
@@ -196,14 +265,22 @@
     },
     {
       "from": "42:out_r",
-      "to": "43:In2"
+      "to": "43:In1"
     },
-    {
+    { 
       "from": "43:Out1",
-      "to": "system:playback_1"
+      "to": "44:in_l"
     },
     {
       "from": "43:Out2",
+      "to": "44:in_r"
+    },
+    {
+      "from": "44:out_l",
+      "to": "system:playback_1"
+    },
+    {
+      "from": "44:out_r",
       "to": "system:playback_2"
     }
   ]
