@@ -313,6 +313,11 @@ def main() -> None:
                     client.disconnect(out_port, sl_dest)
                 except Exception as e:
                     print(f"[SL88 Sync] Warning during disconnect: {e}")
+            else:
+                print(f"[SL88 Sync] Warning: Could not find JACK port '{target_port_name}'")
+                
+        except Exception as e:
+             print(f"[SL88 Sync] Failed: {e}")
 
     print("Starting JACK MIDI listener for Program Changes...")
     print(f"Listening on: {client.name}:input")
