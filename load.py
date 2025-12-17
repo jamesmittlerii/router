@@ -283,29 +283,11 @@ def main() -> None:
     if active_piano is not None:
         print(f"Attempting to sync SL88 to active piano {active_piano}...")
         
-        # Look for the SL88 MIDI Input port (where we SEND commands to)
-        # Regex search for ports containing 'SL' and 'CTRL' if possible
-        # Typically "system:midi_playback_X" or a hardware bridge port
+        # Target the port that worked in pc2.py
+        target_port_name = "system:midi_playback_1"
+        
         try:
-            # Try to find something specific
-            # get_ports(name_pattern, is_audio=False, is_midi=True, is_physical=True/False, is_input=True/False)
-            # We want an INPUT port (destination) on the SL device.
-            
-            # Find all writable MIDI ports
-            dests = client.get_ports(is_midi=True, is_input=True)
-            
-            sl_dest = None
-            for p in dests:
-                if "SL" in p.name and "CTRL" in p.name:
-                    sl_dest = p
-                    break
-            
-            # Fallback to just "SL"
-            if not sl_dest:
-                for p in dests:
-                    if "SL" in p.name:
-                        sl_dest = p
-                        break
+            sl_dest = client.get_port_by_name(target_port_name)
             
             if sl_dest:
                 print(f"Found SL88 destination: {sl_dest.name}")
@@ -319,7 +301,7 @@ def main() -> None:
                 send_q.put(msg)
                 print(f"Queued initial Program Change: {active_piano} on Ch{COMMON_CHANNEL}")
             else:
-                print("Warning: Could not find JACK port for SL88 (SL.*CTRL or SL.*)")
+                print(f"Warning: Could not find JACK port '{target_port_name}'")
                 
         except Exception as e:
              print(f"SL88 Sync failed: {e}")
