@@ -193,12 +193,16 @@ def main() -> None:
     connections: list[dict[str, str]] = pb.get("connections", [])
 
     print("== Loading Plugins == ")
+    piano_ids = []
 
     # 1) Add plugins (sorted by numeric id for deterministic behavior)
     for sid in sorted(plugins.keys(), key=lambda x: int(x)):
         p = plugins[sid]
         uri = p["uri"]
         inst = int(sid)
+        if uri == "http://sfztools.github.io/sfizz":
+            piano_ids.append(inst)
+        
         print(f'== add {inst} {uri}')
         try:
             mod_add(uri, inst)
@@ -277,7 +281,8 @@ def main() -> None:
         print(f"Connection error: {e}")
 
     print("Listening for MIDI events... (Ctrl+C to stop)")
-    print("Mapping: Program 0->10, 1->11 ... 6->16")
+    print("Listening for MIDI events... (Ctrl+C to stop)")
+    print(f"Mapping: Program Change X -> Piano Instance X. Detected Pianos: {sorted(piano_ids)}")
 
     last_prog = None
 
@@ -311,29 +316,24 @@ def main() -> None:
             print(f"🎹 PROGRAM CHANGE -> program={prog}, channel={msg.channel}")
 
             # Mapping Logic
-            # Pianos 10-16 correspond to Program numbers 0-6?
-            # User said "pianos defined 10-16".
-            # Let's assume Program 0 -> 10, Program 6 -> 16.
+            # If the program number matches one of our known piano instances,
+            # enable that one and bypass the others.
             
-            if 0 <= prog <= 6:
-                target_inst = 10 + prog
-                print(f"   Selecting Piano {target_inst}...")
+            if prog in piano_ids:
+                print(f"   Selecting Piano {prog}...")
                 
-                # Switch all 10-16
-                for inst in range(10, 17):
+                for inst in piano_ids:
                     # If this is the one we want, bypass=False (active)
                     # If this is NOT the one, bypass=True (bypassed)
-                    should_be_active = (inst == target_inst)
+                    should_be_active = (inst == prog)
                     bypass_val = False if should_be_active else True
                     
                     try:
-                        # Only send if we want to be meticulous, or just send to all to be safe
-                        # mod_bypass is cheap usually
                          mod_bypass(inst, bypass_val)
                     except Exception as e:
                         print(f"   Failed to set bypass for {inst}: {e}")
             else:
-                print(f"   (Program {prog} out of range 0-6, ignoring switch)")
+                print(f"   (Program {prog} is not a known piano instance, ignoring switch)")
 
     except KeyboardInterrupt:
         print("\nStopping...")
