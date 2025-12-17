@@ -149,21 +149,82 @@ def expand_port(port: str) -> str:
             return f"effect_{left}:{right}"
     return port
 
+# ---- Helper Functions ----
+
+def sync_sl88(program: int):
+    """
+    Spins up a temporary JACK client to send a single Program Change message
+    to the SL88 keyboard (via system:midi_playback_1), then exits.
+    """
+    print(f"[SL88 Sync] Starting temporary client to set program={program}...")
+    
+    try:
+        tmp_client = jack.Client("Router_Sync")
+        out = tmp_client.midi_outports.register("out")
+        done = threading.Event()
+        sent = False
+        
+        # We need to capture 'program' in the closure
+        # 0xC0 | (2-1) = 0xC1 for Channel 2
+        status = 0xC0 | (COMMON_CHANNEL - 1)
+        # Using a list for the bytes to ensure it's mutable if needed, passed to bytes()
+        msg_bytes = bytes([status, program])
+
+        @tmp_client.set_process_callback
+        def process(frames):
+            nonlocal sent
+            if sent:
+                return
+            # Write immediately at offset 0
+            out.write_midi_event(0, msg_bytes)
+            sent = True
+            done.set()
+        
+        print("[SL88 Sync] Activating client...")
+        tmp_client.activate()
+        
+        target_port_name = "system:midi_playback_1"
+        try:
+            target = tmp_client.get_port_by_name(target_port_name)
+            if target:
+                print(f"[SL88 Sync] Connecting to {target_port_name}...")
+                tmp_client.connect(out, target)
+                
+                print("[SL88 Sync] Waiting for process cycle to send...")
+                # Wait up to 2 seconds for JACK to cycle
+                if done.wait(2.0):
+                    print(f"[SL88 Sync] SUCCESS: Sent Program Change {program} on Ch{COMMON_CHANNEL}")
+                else:
+                    print("[SL88 Sync] TIMEOUT: Did not send message within 2.0s")
+            else:
+                print(f"[SL88 Sync] ERROR: Could not find JACK port '{target_port_name}'")
+        except jack.JackError as e:
+            print(f"[SL88 Sync] JackError during connection: {e}")
+            
+    except Exception as e:
+        print(f"[SL88 Sync] Exception: {e}")
+    finally:
+        # Clean up
+        try:
+            if 'tmp_client' in locals() and tmp_client:
+                tmp_client.deactivate()
+                tmp_client.close()
+                print("[SL88 Sync] Client closed.")
+        except Exception as e:
+            pass
+
 # ---- JACK MIDI Handling ----
 
 event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)
 
-# One-shot sync state
-sl88_init_msg: Optional[bytes] = None
-sl88_msg_sent: bool = False
+# (No more global one-shot state needed here)
 
 client = jack.Client("Router_Loader")
 in_port = client.midi_inports.register("input")
-out_port = client.midi_outports.register("output")
+# (No output port needed on the main listener)
 
 @client.set_process_callback
 def process(frames):
-    global sl88_msg_sent
     # 1) Incoming MIDI
     for offset, data in in_port.incoming_midi_events():
         try:
@@ -171,10 +232,7 @@ def process(frames):
         except queue.Full:
             pass
             
-    # 2) Outgoing MIDI (One-shot)
-    if sl88_init_msg is not None and not sl88_msg_sent:
-        out_port.write_midi_event(0, sl88_init_msg)
-        sl88_msg_sent = True
+    # No outgoing MIDI logic here anymore
 
 def decode_mido(event_bytes: bytes):
     """Decode raw MIDI bytes into a mido Message if possible."""
@@ -270,8 +328,14 @@ def main() -> None:
 
     print("== done loading ==")
     print("---------------------------------------------------")
-    print(f"Started JACK client: {client.name}")
     
+    # 4) Sync SL88 (Temporary dedicated client)
+    if active_piano is not None:
+        sync_sl88(active_piano)
+
+    print("Starting JACK MIDI listener for Program Changes...")
+    print(f"Started JACK client: {client.name}")
+    # (Client already activated above)
     # Activate JACK Client
     try:
         client.activate()
@@ -279,41 +343,6 @@ def main() -> None:
         print(f"Failed to activate JACK client: {e}")
         return
 
-    # 4) Sync SL88 (JACK connection)
-    if active_piano is not None:
-        print(f"Attempting to sync SL88 to active piano {active_piano}...")
-        
-        # Target the port that worked in pc2.py
-        target_port_name = "system:midi_playback_1"
-        
-        try:
-            sl_dest = client.get_port_by_name(target_port_name)
-            
-            if sl_dest:
-                print(f"Found SL88 destination: {sl_dest.name}")
-                client.connect(out_port, sl_dest)
-                print(f"Connected {out_port.name} -> {sl_dest.name}")
-                
-                # Send Program Change
-                # Channel 2 (0-indexed 1) -> 0xC1
-                status = 0xC0 | (COMMON_CHANNEL - 1)
-                
-                global sl88_init_msg
-                sl88_init_msg = bytes([status, active_piano])
-                
-                print(f"Set initial Program Change: {active_piano} on Ch{COMMON_CHANNEL}")
-                
-                # Wait briefly to ensure the processing thread picks it up before we potentially move on
-                # (Though we stay running in the loop below, so it's fine)
-                time.sleep(0.5)
-            else:
-                print(f"Warning: Could not find JACK port '{target_port_name}'")
-                
-        except Exception as e:
-             print(f"SL88 Sync failed: {e}")
-
-    print("Starting JACK MIDI listener for Program Changes...")
-    # (Client already activated above)
     print(f"Listening on: {client.name}:input")
 
     # Try to auto-connect
