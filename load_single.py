@@ -303,11 +303,16 @@ def main() -> None:
                 # Use the Queue to send exactly once
                 send_q.put(msg_bytes)
                 print(f"[SL88 Sync] Queued ONE-SHOT Program Change: {active_piano} on Ch{COMMON_CHANNEL} (Hex: {msg_bytes.hex()})")
-            else:
-                print(f"[SL88 Sync] Warning: Could not find JACK port '{target_port_name}'")
                 
-        except Exception as e:
-             print(f"[SL88 Sync] Failed: {e}")
+                # Wait briefly to ensure the processing thread picks it up
+                time.sleep(1.0)
+                
+                # DISCONNECT to prevent feedback loops/flickering
+                print(f"[SL88 Sync] Disconnecting {out_port.name} -> {sl_dest.name} to avoid loops.")
+                try:
+                    client.disconnect(out_port, sl_dest)
+                except Exception as e:
+                    print(f"[SL88 Sync] Warning during disconnect: {e}")
 
     print("Starting JACK MIDI listener for Program Changes...")
     print(f"Listening on: {client.name}:input")
