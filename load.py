@@ -193,7 +193,9 @@ def sync_sl88(program: int):
                 print("[SL88 Sync] Waiting for process cycle to send...")
                 # Wait up to 2 seconds for JACK to cycle
                 if done.wait(2.0):
-                    print(f"[SL88 Sync] SUCCESS: Sent Program Change {program} on Ch{COMMON_CHANNEL}")
+                    print(f"[SL88 Sync] SUCCESS: Sent Program Change {program} on Ch{COMMON_CHANNEL} (Hex: {msg_bytes.hex()})")
+                    # Give JACK audio thread a moment to flush the buffer before we close
+                    time.sleep(0.25)
                 else:
                     print("[SL88 Sync] TIMEOUT: Did not send message within 2.0s")
             else:
