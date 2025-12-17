@@ -34,7 +34,7 @@ import mido
 MOD_HOST = os.environ.get("MOD_HOST", "127.0.0.1")
 MOD_PORT = int(os.environ.get("MOD_PORT", "5555"))
 TIMEOUT_S = float(os.environ.get("MOD_TIMEOUT", "5.0"))
-COMMON_CHANNEL = 16  # SL88 expects PC on channel 16 (0-indexed 15)
+COMMON_CHANNEL = 2  # User confirmed Channel 2
 
 # Which JACK MIDI source to tap for Program Changes
 TARGET_PORT = "system:midi_capture_1"
@@ -152,7 +152,10 @@ def expand_port(port: str) -> str:
 # ---- JACK MIDI Handling ----
 
 event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)
-send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=128)
+
+# One-shot sync state
+sl88_init_msg: Optional[bytes] = None
+sl88_msg_sent: bool = False
 
 client = jack.Client("Router_Loader")
 in_port = client.midi_inports.register("input")
@@ -160,6 +163,7 @@ out_port = client.midi_outports.register("output")
 
 @client.set_process_callback
 def process(frames):
+    global sl88_msg_sent
     # 1) Incoming MIDI
     for offset, data in in_port.incoming_midi_events():
         try:
@@ -167,14 +171,10 @@ def process(frames):
         except queue.Full:
             pass
             
-    # 2) Outgoing MIDI
-    # We write all queued messages at offset 0 (as soon as possible)
-    while True:
-        try:
-            msg = send_q.get_nowait()
-            out_port.write_midi_event(0, msg)
-        except queue.Empty:
-            break
+    # 2) Outgoing MIDI (One-shot)
+    if sl88_init_msg is not None and not sl88_msg_sent:
+        out_port.write_midi_event(0, sl88_init_msg)
+        sl88_msg_sent = True
 
 def decode_mido(event_bytes: bytes):
     """Decode raw MIDI bytes into a mido Message if possible."""
@@ -295,11 +295,17 @@ def main() -> None:
                 print(f"Connected {out_port.name} -> {sl_dest.name}")
                 
                 # Send Program Change
-                # Channel 16 (0-indexed 15) -> 0xCF
+                # Channel 2 (0-indexed 1) -> 0xC1
                 status = 0xC0 | (COMMON_CHANNEL - 1)
-                msg = bytes([status, active_piano])
-                send_q.put(msg)
-                print(f"Queued initial Program Change: {active_piano} on Ch{COMMON_CHANNEL}")
+                
+                global sl88_init_msg
+                sl88_init_msg = bytes([status, active_piano])
+                
+                print(f"Set initial Program Change: {active_piano} on Ch{COMMON_CHANNEL}")
+                
+                # Wait briefly to ensure the processing thread picks it up before we potentially move on
+                # (Though we stay running in the loop below, so it's fine)
+                time.sleep(0.5)
             else:
                 print(f"Warning: Could not find JACK port '{target_port_name}'")
                 
