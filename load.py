@@ -28,7 +28,6 @@ from typing import Any, Optional
 
 import jack
 import mido
-import rtmidi
 
 # ---- Configuration ----
 
@@ -150,64 +149,32 @@ def expand_port(port: str) -> str:
             return f"effect_{left}:{right}"
     return port
 
-# ---- SL88 Handling (ALSA via rtmidi) ----
-
-def open_sl_ctrl_out():
-    """
-    Find and open the SL CTRL ALSA MIDI output port.
-    Returns (midi_out, port_name).
-    """
-    midiout = rtmidi.MidiOut()
-    ports = midiout.get_ports()
-
-    if not ports:
-        # Not fatal, just return None
-        print("SL88: No ALSA MIDI OUT ports found.")
-        return None, None
-
-    for idx, name in enumerate(ports):
-        if "SL CTRL" in name:
-            midiout.open_port(idx)
-            print(f"SL88: Opened MIDI OUT: {name} (index {idx})")
-            return midiout, name
-
-    for idx, name in enumerate(ports):
-        if "SL" in name:
-            midiout.open_port(idx)
-            print(f"SL88: Opened MIDI OUT (fallback): {name} (index {idx})")
-            return midiout, name
-
-    print("SL88: Could not find an SL CTRL or SL* MIDI OUT port.")
-    return None, None
-
-
-def force_initial_program(midiout, program: int) -> None:
-    """
-    Send a Program Change on the COMMON channel to force the SL88
-    to the given program (e.g. 10 -> P011).
-    """
-    common_midi_channel = COMMON_CHANNEL - 1  # 16 -> 15 (0-indexed)
-    status = 0xC0 | common_midi_channel       # Program Change on that channel
-    msg = [status, program]
-    midiout.send_message(msg)
-    print(f"SL88: Forced program={program} (P{program+1:03d}) on ch={COMMON_CHANNEL}")
-
 # ---- JACK MIDI Handling ----
 
 event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)
+send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=128)
 
 client = jack.Client("Router_Loader")
 in_port = client.midi_inports.register("input")
+out_port = client.midi_outports.register("output")
 
 @client.set_process_callback
 def process(frames):
-    # Audio thread: do the absolute minimum, never block.
+    # 1) Incoming MIDI
     for offset, data in in_port.incoming_midi_events():
         try:
             event_q.put_nowait(bytes(data))
         except queue.Full:
-            # Drop events rather than blocking the audio thread
             pass
+            
+    # 2) Outgoing MIDI
+    # We write all queued messages at offset 0 (as soon as possible)
+    while True:
+        try:
+            msg = send_q.get_nowait()
+            out_port.write_midi_event(0, msg)
+        except queue.Empty:
+            break
 
 def decode_mido(event_bytes: bytes):
     """Decode raw MIDI bytes into a mido Message if possible."""
@@ -303,20 +270,7 @@ def main() -> None:
 
     print("== done loading ==")
     print("---------------------------------------------------")
-    
-    # 4) Sync SL88 (if present and we have an active piano)
-    if active_piano is not None:
-        print(f"Attempting to sync SL88 to active piano {active_piano}...")
-        try:
-            mo, moname = open_sl_ctrl_out()
-            if mo:
-                force_initial_program(mo, active_piano)
-                mo.close_port()
-                del mo
-        except Exception as e:
-             print(f"SL88 Sync failed: {e}")
-
-    print("Starting JACK MIDI listener for Program Changes...")
+    print(f"Started JACK client: {client.name}")
     
     # Activate JACK Client
     try:
@@ -325,7 +279,53 @@ def main() -> None:
         print(f"Failed to activate JACK client: {e}")
         return
 
-    print(f"Started JACK client: {client.name}")
+    # 4) Sync SL88 (JACK connection)
+    if active_piano is not None:
+        print(f"Attempting to sync SL88 to active piano {active_piano}...")
+        
+        # Look for the SL88 MIDI Input port (where we SEND commands to)
+        # Regex search for ports containing 'SL' and 'CTRL' if possible
+        # Typically "system:midi_playback_X" or a hardware bridge port
+        try:
+            # Try to find something specific
+            # get_ports(name_pattern, is_audio=False, is_midi=True, is_physical=True/False, is_input=True/False)
+            # We want an INPUT port (destination) on the SL device.
+            
+            # Find all writable MIDI ports
+            dests = client.get_ports(is_midi=True, is_input=True)
+            
+            sl_dest = None
+            for p in dests:
+                if "SL" in p.name and "CTRL" in p.name:
+                    sl_dest = p
+                    break
+            
+            # Fallback to just "SL"
+            if not sl_dest:
+                for p in dests:
+                    if "SL" in p.name:
+                        sl_dest = p
+                        break
+            
+            if sl_dest:
+                print(f"Found SL88 destination: {sl_dest.name}")
+                client.connect(out_port, sl_dest)
+                print(f"Connected {out_port.name} -> {sl_dest.name}")
+                
+                # Send Program Change
+                # Channel 16 (0-indexed 15) -> 0xCF
+                status = 0xC0 | (COMMON_CHANNEL - 1)
+                msg = bytes([status, active_piano])
+                send_q.put(msg)
+                print(f"Queued initial Program Change: {active_piano} on Ch{COMMON_CHANNEL}")
+            else:
+                print("Warning: Could not find JACK port for SL88 (SL.*CTRL or SL.*)")
+                
+        except Exception as e:
+             print(f"SL88 Sync failed: {e}")
+
+    print("Starting JACK MIDI listener for Program Changes...")
+    # (Client already activated above)
     print(f"Listening on: {client.name}:input")
 
     # Try to auto-connect
