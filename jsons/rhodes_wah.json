@@ -1,0 +1,33 @@
+{
+  "version": 2,
+  "name": "Rhodes Sfizz Test",
+  "description": "sfizz → Calf Chorus → Calf Reverb → Gain2x2",
+  "width": 1200,
+  "height": 600,
+  "plugins": {
+    "16": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-rhodes",
+      "bypass": false,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/JRhodes3d-st-no-xfade/jRhodes3d-st-no-xfade.sfz"
+      }
+    }
+  },
+  "connections": [
+    {
+      "from": "system:midi_capture_1",
+      "to": "16:control"
+    },
+    {
+      "from": "16:out_left",
+      "to": "system:playback_1"
+    },
+    {
+      "from": "16:out_right",
+      "to": "system:playback_2"
+    }
+  ]
+}
