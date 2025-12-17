@@ -7,6 +7,8 @@ Headless MOD-style pedalboard.json loader for mod-host.
   - connections: [ { "from": "...", "to": "..." }, ... ]
 
 - Talks to mod-host over TCP (default 127.0.0.1:5555) using its text protocol.
+- STARTS JACK CLIENT AFTER LOADING to listen for MIDI Program Changes.
+- Switches plugins 10-16 based on Program Change 0-6.
 
 Compatibility notes:
 - In some mod-host builds, `add "<uri>" <id>` returns `resp <id>` (NOT resp 0).
@@ -19,14 +21,25 @@ import os
 import socket
 import sys
 import time
+import queue
+import threading
 from pathlib import Path
 from typing import Any, Optional
 
+import jack
+import mido
+
+# ---- Configuration ----
 
 MOD_HOST = os.environ.get("MOD_HOST", "127.0.0.1")
 MOD_PORT = int(os.environ.get("MOD_PORT", "5555"))
 TIMEOUT_S = float(os.environ.get("MOD_TIMEOUT", "5.0"))
 
+# Which JACK MIDI source to tap for Program Changes
+TARGET_PORT = "system:midi_capture_1"
+FILTER_CHANNEL = None  # Set to 0-15 to filter by channel, or None for all
+
+# ---- Helper Functions ----
 
 def send_cmd(line: str) -> str:
     """
@@ -91,7 +104,7 @@ def mod_preload(uri: str, instance_id: int) -> None:
     # Many builds return the created instance id.
     if code != instance_id:
         print(f"WARNING: add requested id={instance_id} but host returned resp {code}")
-   
+
 
 def mod_bypass(inst: int, bypass_on: bool) -> None:
     # bypass_on=True  -> "bypass <inst> 1"
@@ -135,6 +148,31 @@ def expand_port(port: str) -> str:
             return f"effect_{left}:{right}"
     return port
 
+# ---- JACK MIDI Handling ----
+
+event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)
+
+client = jack.Client("Router_Loader")
+in_port = client.midi_inports.register("input")
+
+@client.set_process_callback
+def process(frames):
+    # Audio thread: do the absolute minimum, never block.
+    for offset, data in in_port.incoming_midi_events():
+        try:
+            event_q.put_nowait(bytes(data))
+        except queue.Full:
+            # Drop events rather than blocking the audio thread
+            pass
+
+def decode_mido(event_bytes: bytes):
+    """Decode raw MIDI bytes into a mido Message if possible."""
+    try:
+        return mido.Message.from_bytes(event_bytes)
+    except ValueError:
+        return None
+
+# ---- Main ----
 
 def main() -> None:
     if len(sys.argv) != 2:
@@ -142,10 +180,19 @@ def main() -> None:
         sys.exit(2)
 
     pb_path = Path(sys.argv[1])
-    pb = json.loads(pb_path.read_text(encoding="utf-8"))
+    try:
+        pb = json.loads(pb_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        print(f"Error: File not found: {pb_path}")
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON in {pb_path}: {e}")
+        sys.exit(1)
 
     plugins: dict[str, Any] = pb.get("plugins", {})
     connections: list[dict[str, str]] = pb.get("connections", [])
+
+    print("== Loading Plugins == ")
 
     # 1) Add plugins (sorted by numeric id for deterministic behavior)
     for sid in sorted(plugins.keys(), key=lambda x: int(x)):
@@ -153,9 +200,13 @@ def main() -> None:
         uri = p["uri"]
         inst = int(sid)
         print(f'== add {inst} {uri}')
-        mod_add(uri, inst)
+        try:
+            mod_add(uri, inst)
+        except Exception as e:
+            print(f"Failed to add plugin {inst}: {e}")
 
     # 2) Apply state (patch_set) and controls (param_set)
+    print("== Applying State & Controls ==")
     for sid in sorted(plugins.keys(), key=lambda x: int(x)):
         p = plugins[sid]
         inst = int(sid)
@@ -163,30 +214,138 @@ def main() -> None:
         state = p.get("state", {}) or {}
         for key, val in state.items():
             print(f"== patch_set {inst} {key} = {val}")
-            mod_patch_set(inst, key, str(val))
+            try:
+                mod_patch_set(inst, key, str(val))
+            except Exception as e:
+                print(f"Failed patch_set {inst} {key}: {e}")
 
         controls = p.get("controls", {}) or {}
         for symbol, val in controls.items():
             print(f"== param_set {inst} {symbol} {val}")
-            mod_param_set(inst, symbol, val)
+            try:
+                mod_param_set(inst, symbol, val)
+            except Exception as e:
+                print(f"Failed param_set {inst} {symbol}: {e}")
 
         # 3) Optional bypass flag (boolean)
         if "bypass" in p:
             bypass_on = bool(p["bypass"])
             print(f"== bypass {inst} {1 if bypass_on else 0}")
-            mod_bypass(inst, bypass_on)
+            try:
+                mod_bypass(inst, bypass_on)
+            except Exception as e:
+                 print(f"Failed bypass {inst}: {e}")
 
     # Small delay helps samplers settle before wiring audio
     time.sleep(0.2)
 
     # 3) Connect ports
+    print("== Connecting Ports ==")
     for c in connections:
         src = expand_port(c["from"])
         dst = expand_port(c["to"])
         print(f"== connect {src} -> {dst}")
-        mod_connect(src, dst)
+        try:
+            mod_connect(src, dst)
+        except Exception as e:
+             print(f"Failed connect {src}->{dst}: {e}")
 
-    print("== done ==")
+    print("== done loading ==")
+    print("---------------------------------------------------")
+    print("Starting JACK MIDI listener for Program Changes...")
+    
+    # Activate JACK Client
+    try:
+        client.activate()
+    except Exception as e:
+        print(f"Failed to activate JACK client: {e}")
+        return
+
+    print(f"Started JACK client: {client.name}")
+    print(f"Listening on: {client.name}:input")
+
+    # Try to auto-connect
+    try:
+        src_port = client.get_port_by_name(TARGET_PORT)
+        if src_port:
+            client.connect(src_port, in_port)
+            print(f"Connected {TARGET_PORT} -> {client.name}:input")
+        else:
+            print(f"Warning: Could not find '{TARGET_PORT}'. Connect manually, e.g.:")
+            print(f"  jack_connect {TARGET_PORT} {client.name}:input")
+    except jack.JackError as e:
+        print(f"Connection error: {e}")
+
+    print("Listening for MIDI events... (Ctrl+C to stop)")
+    print("Mapping: Program 0->10, 1->11 ... 6->16")
+
+    last_prog = None
+
+    try:
+        while True:
+            try:
+                data = event_q.get(timeout=1.0)
+            except queue.Empty:
+                continue
+
+            msg = decode_mido(data)
+            if msg is None:
+                continue
+
+            # Debug print
+            # print(f"Received: {msg!r}")
+
+            if msg.type != "program_change":
+                continue
+
+            if FILTER_CHANNEL is not None and msg.channel != FILTER_CHANNEL:
+                continue
+
+            prog = msg.program
+
+            # Optional debounce
+            if prog == last_prog:
+                continue
+            last_prog = prog
+
+            print(f"🎹 PROGRAM CHANGE -> program={prog}, channel={msg.channel}")
+
+            # Mapping Logic
+            # Pianos 10-16 correspond to Program numbers 0-6?
+            # User said "pianos defined 10-16".
+            # Let's assume Program 0 -> 10, Program 6 -> 16.
+            
+            if 0 <= prog <= 6:
+                target_inst = 10 + prog
+                print(f"   Selecting Piano {target_inst}...")
+                
+                # Switch all 10-16
+                for inst in range(10, 17):
+                    # If this is the one we want, bypass=False (active)
+                    # If this is NOT the one, bypass=True (bypassed)
+                    should_be_active = (inst == target_inst)
+                    bypass_val = False if should_be_active else True
+                    
+                    try:
+                        # Only send if we want to be meticulous, or just send to all to be safe
+                        # mod_bypass is cheap usually
+                         mod_bypass(inst, bypass_val)
+                    except Exception as e:
+                        print(f"   Failed to set bypass for {inst}: {e}")
+            else:
+                print(f"   (Program {prog} out of range 0-6, ignoring switch)")
+
+    except KeyboardInterrupt:
+        print("\nStopping...")
+    finally:
+        try:
+            client.deactivate()
+        except:
+            pass
+        try:
+            client.close()
+        except:
+             pass
 
 
 if __name__ == "__main__":
