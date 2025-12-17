@@ -4,7 +4,6 @@
   "description": "sfizz → Calf Chorus → Calf Reverb → Gain2x2",
   "width": 1200,
   "height": 600,
-
   "plugins": {
     "10": {
       "uri": "http://sfztools.github.io/sfizz",
@@ -60,11 +59,11 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-wurlitzer",
       "bypass": true,
-      "x": 100, 
+      "x": 100,
       "y": 200,
       "state": {
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Wurlitzer EP200/Wurlitzer EP200.sfz"
-      } 
+      }
     },
     "16": {
       "uri": "http://sfztools.github.io/sfizz",
@@ -76,21 +75,18 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/JRhodes3d-st-no-xfade/jRhodes3d-st-no-xfade.sfz"
       }
     },
-
     "41": {
       "uri": "http://calf.sourceforge.net/plugins/MultiChorus",
       "symbol": "chorus",
       "x": 350,
       "y": 200
     },
-
     "42": {
       "uri": "http://calf.sourceforge.net/plugins/Reverb",
       "symbol": "reverb",
       "x": 600,
       "y": 200
     },
-
     "43": {
       "uri": "http://moddevices.com/plugins/mod-devel/Gain2x2",
       "symbol": "gain",
@@ -101,43 +97,35 @@
       }
     }
   },
-
   "connections": [
     {
       "from": "system:midi_capture_1",
       "to": "10:control"
     },
-
     {
       "from": "system:midi_capture_1",
       "to": "11:control"
     },
-
     {
       "from": "system:midi_capture_1",
       "to": "12:control"
     },
-
     {
       "from": "system:midi_capture_1",
       "to": "13:control"
     },
-
     {
       "from": "system:midi_capture_1",
       "to": "14:control"
     },
-
-      {
+    {
       "from": "system:midi_capture_1",
       "to": "15:control"
     },
-
-      {
+    {
       "from": "system:midi_capture_1",
       "to": "16:control"
     },
-
     {
       "from": "10:out_left",
       "to": "41:in_l"
@@ -146,61 +134,54 @@
       "from": "10:out_right",
       "to": "41:in_r"
     },
-
-    { 
+    {
       "from": "11:out_left",
       "to": "41:in_l"
-    },  
-    { 
+    },
+    {
       "from": "11:out_right",
       "to": "41:in_r"
     },
-
-    { 
+    {
       "from": "12:out_left",
       "to": "41:in_l"
-    },  
-    { 
+    },
+    {
       "from": "12:out_right",
       "to": "41:in_r"
     },
-
-    { 
+    {
       "from": "13:out_left",
       "to": "41:in_l"
-    },  
-    { 
+    },
+    {
       "from": "13:out_right",
       "to": "41:in_r"
     },
-
-    { 
+    {
       "from": "14:out_left",
       "to": "41:in_l"
-    },  
-    { 
+    },
+    {
       "from": "14:out_right",
       "to": "41:in_r"
     },
-
-    { 
+    {
       "from": "15:out_left",
       "to": "41:in_l"
-    },  
-    { 
+    },
+    {
       "from": "15:out_right",
       "to": "41:in_r"
     },
-
-    { 
+    {
       "from": "16:out_left",
       "to": "41:in_l"
-    },  
-    { 
+    },
+    {
       "from": "16:out_right",
       "to": "41:in_r"
     },
-
     {
       "from": "41:out_l",
       "to": "42:in_l"
@@ -209,7 +190,6 @@
       "from": "41:out_r",
       "to": "42:in_r"
     },
-
     {
       "from": "42:out_l",
       "to": "43:In1"
@@ -218,7 +198,6 @@
       "from": "42:out_r",
       "to": "43:In2"
     },
-
     {
       "from": "43:Out1",
       "to": "system:playback_1"

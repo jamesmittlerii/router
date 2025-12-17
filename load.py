@@ -202,7 +202,7 @@ def main() -> None:
         inst = int(sid)
         if uri == "http://sfztools.github.io/sfizz":
             piano_ids.append(inst)
-        
+
         print(f'== add {inst} {uri}')
         try:
             mod_add(uri, inst)
@@ -280,7 +280,6 @@ def main() -> None:
     except jack.JackError as e:
         print(f"Connection error: {e}")
 
-    print("Listening for MIDI events... (Ctrl+C to stop)")
     print("Listening for MIDI events... (Ctrl+C to stop)")
     print(f"Mapping: Program Change X -> Piano Instance X. Detected Pianos: {sorted(piano_ids)}")
 
