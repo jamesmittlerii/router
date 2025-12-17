@@ -28,12 +28,14 @@ from typing import Any, Optional
 
 import jack
 import mido
+import rtmidi
 
 # ---- Configuration ----
 
 MOD_HOST = os.environ.get("MOD_HOST", "127.0.0.1")
 MOD_PORT = int(os.environ.get("MOD_PORT", "5555"))
 TIMEOUT_S = float(os.environ.get("MOD_TIMEOUT", "5.0"))
+COMMON_CHANNEL = 16  # SL88 expects PC on channel 16 (0-indexed 15)
 
 # Which JACK MIDI source to tap for Program Changes
 TARGET_PORT = "system:midi_capture_1"
@@ -148,6 +150,48 @@ def expand_port(port: str) -> str:
             return f"effect_{left}:{right}"
     return port
 
+# ---- SL88 Handling (ALSA via rtmidi) ----
+
+def open_sl_ctrl_out():
+    """
+    Find and open the SL CTRL ALSA MIDI output port.
+    Returns (midi_out, port_name).
+    """
+    midiout = rtmidi.MidiOut()
+    ports = midiout.get_ports()
+
+    if not ports:
+        # Not fatal, just return None
+        print("SL88: No ALSA MIDI OUT ports found.")
+        return None, None
+
+    for idx, name in enumerate(ports):
+        if "SL CTRL" in name:
+            midiout.open_port(idx)
+            print(f"SL88: Opened MIDI OUT: {name} (index {idx})")
+            return midiout, name
+
+    for idx, name in enumerate(ports):
+        if "SL" in name:
+            midiout.open_port(idx)
+            print(f"SL88: Opened MIDI OUT (fallback): {name} (index {idx})")
+            return midiout, name
+
+    print("SL88: Could not find an SL CTRL or SL* MIDI OUT port.")
+    return None, None
+
+
+def force_initial_program(midiout, program: int) -> None:
+    """
+    Send a Program Change on the COMMON channel to force the SL88
+    to the given program (e.g. 10 -> P011).
+    """
+    common_midi_channel = COMMON_CHANNEL - 1  # 16 -> 15 (0-indexed)
+    status = 0xC0 | common_midi_channel       # Program Change on that channel
+    msg = [status, program]
+    midiout.send_message(msg)
+    print(f"SL88: Forced program={program} (P{program+1:03d}) on ch={COMMON_CHANNEL}")
+
 # ---- JACK MIDI Handling ----
 
 event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)
@@ -194,6 +238,7 @@ def main() -> None:
 
     print("== Loading Plugins == ")
     piano_ids = []
+    active_piano = None
 
     # 1) Add plugins (sorted by numeric id for deterministic behavior)
     for sid in sorted(plugins.keys(), key=lambda x: int(x)):
@@ -237,6 +282,8 @@ def main() -> None:
             print(f"== bypass {inst} {1 if bypass_on else 0}")
             try:
                 mod_bypass(inst, bypass_on)
+                if not bypass_on and inst in piano_ids:
+                    active_piano = inst
             except Exception as e:
                  print(f"Failed bypass {inst}: {e}")
 
@@ -256,6 +303,19 @@ def main() -> None:
 
     print("== done loading ==")
     print("---------------------------------------------------")
+    
+    # 4) Sync SL88 (if present and we have an active piano)
+    if active_piano is not None:
+        print(f"Attempting to sync SL88 to active piano {active_piano}...")
+        try:
+            mo, moname = open_sl_ctrl_out()
+            if mo:
+                force_initial_program(mo, active_piano)
+                mo.close_port()
+                del mo
+        except Exception as e:
+             print(f"SL88 Sync failed: {e}")
+
     print("Starting JACK MIDI listener for Program Changes...")
     
     # Activate JACK Client
