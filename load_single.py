@@ -25,6 +25,7 @@ import sys
 import time
 import queue
 import threading
+import signal
 from pathlib import Path
 from typing import Any, Optional
 
@@ -41,6 +42,17 @@ COMMON_CHANNEL = 2  # User confirmed Channel 2
 # Which JACK MIDI source to tap for Program Changes
 TARGET_PORT = "system:midi_capture_1"
 FILTER_CHANNEL = None  # Set to 0-15 to filter by channel, or None for all
+
+
+stop_event = threading.Event()
+
+def request_stop(signum, frame):
+    print(f"\nReceived signal {signum}, stopping...")
+    stop_event.set()
+
+signal.signal(signal.SIGTERM, request_stop)
+signal.signal(signal.SIGINT, request_stop)   # Ctrl-C too
+
 
 # ---- Helper Functions ----
 
@@ -346,7 +358,7 @@ def main() -> None:
     last_prog = None
 
     try:
-        while True:
+        while not stop_event.is_set():
             try:
                 data = event_q.get(timeout=1.0)
             except queue.Empty:
@@ -357,7 +369,7 @@ def main() -> None:
                 continue
 
             # Debug print
-            print(f"Received: {msg!r}")
+            # print(f"Received: {msg!r}")
 
 
             if msg.type != "program_change":
@@ -425,3 +437,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+  
