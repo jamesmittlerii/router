@@ -231,7 +231,10 @@ def main() -> None:
         p = plugins[sid]
         uri = p["uri"]
         inst = int(sid)
-        if uri == "http://sfztools.github.io/sfizz":
+        if uri in (
+           "http://sfztools.github.io/sfizz",
+           "https://github.com/brummer10/Fluida.lv2",
+        ):
             piano_ids.append(inst)
 
         print(f'== add {inst} {uri}')
