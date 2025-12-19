@@ -39,6 +39,9 @@ MOD_PORT = int(os.environ.get("MOD_PORT", "5555"))
 TIMEOUT_S = float(os.environ.get("MOD_TIMEOUT", "5.0"))
 COMMON_CHANNEL = 2  # User confirmed Channel 2
 
+# Configuration for State Persistence
+STATE_FILE = Path.home() / ".local" / "state" / "router" / "last_state.json"
+
 # Which JACK MIDI source to tap for Program Changes
 TARGET_PORT = "system:midi_capture_1"
 FILTER_CHANNEL = None  # Set to 0-15 to filter by channel, or None for all
@@ -244,6 +247,16 @@ def main() -> None:
         except Exception as e:
             print(f"Failed to add plugin {inst}: {e}")
 
+    # 1.5) Load saved state (Last Active Piano)
+    restored_piano: Optional[int] = None
+    try:
+        if STATE_FILE.exists():
+            saved_data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            restored_piano = saved_data.get("last_active_piano")
+            print(f"[State] Restored last active piano: {restored_piano}")
+    except Exception as e:
+        print(f"[State] Warning: Failed to load state file: {e}")
+
     # 2) Apply state (patch_set) and controls (param_set)
     print("== Applying State & Controls ==")
     for sid in sorted(plugins.keys(), key=lambda x: int(x)):
@@ -269,6 +282,14 @@ def main() -> None:
         # 3) Optional bypass flag (boolean)
         if "bypass" in p:
             bypass_on = bool(p["bypass"])
+
+            # OVERRIDE: If we have a restored active piano, force that ONE to be active, others bypassed
+            if restored_piano is not None and inst in piano_ids:
+                if inst == restored_piano:
+                    bypass_on = False
+                else:
+                    bypass_on = True
+
             print(f"== bypass {inst} {1 if bypass_on else 0}")
             try:
                 mod_bypass(inst, bypass_on)
@@ -402,6 +423,14 @@ def main() -> None:
                          mod_bypass(inst, bypass_val)
                     except Exception as e:
                         print(f"   Failed to set bypass for {inst}: {e}")
+                
+                # Save state
+                try:
+                    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+                    STATE_FILE.write_text(json.dumps({"last_active_piano": prog}), encoding="utf-8")
+                    print(f"   [State] Saved active piano {prog} to {STATE_FILE}")
+                except Exception as e:
+                     print(f"   [State] Failed to save state: {e}")
             else:
                 print(f"   (Program {prog} is not a known piano instance, ignoring switch)")
 
