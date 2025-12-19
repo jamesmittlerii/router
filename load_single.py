@@ -40,7 +40,8 @@ TIMEOUT_S = float(os.environ.get("MOD_TIMEOUT", "5.0"))
 COMMON_CHANNEL = 2  # User confirmed Channel 2
 
 # Configuration for State Persistence
-STATE_FILE = Path.home() / ".local" / "state" / "router" / "last_state.json"
+STATE_FILE = Path(os.environ.get("ROUTER_STATE", "/var/lib/router/last_state.json"))
+STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # Which JACK MIDI source to tap for Program Changes
 TARGET_PORT = "system:midi_capture_1"
