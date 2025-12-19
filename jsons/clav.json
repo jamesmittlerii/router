@@ -82,8 +82,8 @@
       "x": 100,
       "y": 200,
       "state": {
-        "https://github.com/brummer10/Fluida.lv2#soundfont": "/home/pi/Clavinet_Lit.sf2",
-         "https://github.com/brummer10/Fluida.lv2#gain":   "3.0"
+        "https://github.com/brummer10/Fluida.lv2#soundfont": "/usr/local/share/sf2/epianos/Clavinet/Clavinet_List.sf2",
+        "https://github.com/brummer10/Fluida.lv2#gain":   "3.0"
       }
     },
     "18": {
