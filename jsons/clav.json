@@ -86,6 +86,16 @@
          "https://github.com/brummer10/Fluida.lv2#gain":   "3.0"
       }
     },
+    "18": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-clav",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Clavinet/Clavinet.sfz"
+      }
+    },
 
      "35": {
       "uri": "http://calf.sourceforge.net/plugins/StereoTools",
@@ -197,6 +207,10 @@
       "from": "system:midi_capture_1",
       "to": "17:MIDI_IN"
     },
+     {
+      "from": "system:midi_capture_1",
+      "to": "18:control"
+    },
     {
       "from": "10:out_left",
       "to": "35:in_l"
@@ -261,6 +275,15 @@
       "from": "17:out",
       "to": "35:in_r"
     },
+     {
+      "from": "18:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "18:out_right",
+      "to": "35:in_r"
+    },
+
 
     {
       "from": "35:out_l",
