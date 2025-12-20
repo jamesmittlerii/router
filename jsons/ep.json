@@ -117,6 +117,20 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Clavinet/Clavinet.sfz"
       }
     },
+     "19": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-pv-rhodes",
+      "bypass": false,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Electric V LE/Programs/Electric V.sfz"
+      },
+      "controls": {
+        "volume": -10.0
+      }
+    },
+
 
      "35": {
       "uri": "http://calf.sourceforge.net/plugins/StereoTools",
@@ -128,18 +142,10 @@
         "mode": 5.0
       }
      },
-     "50": {
+     "36": {
       "uri": "http://guitarix.sourceforge.net/plugins/gx_switchless_wah#wah",
       "urix": "http://calf.sourceforge.net/plugins/EnvelopeFilter",
-      "symbol": "wah-left",
-      "bypass": true,
-      "x": 350,
-      "y": 200
-     },
-     "51": {
-      "uri": "http://guitarix.sourceforge.net/plugins/gx_switchless_wah#wah",
-      "urix": "http://calf.sourceforge.net/plugins/EnvelopeFilter",
-      "symbol": "wah-right",
+      "symbol": "wah",
       "bypass": true,
       "x": 350,
       "y": 200
@@ -240,6 +246,10 @@
       "from": "system:midi_capture_1",
       "to": "18:control"
     },
+     {
+      "from": "system:midi_capture_1",
+      "to": "19:control"
+    },
     {
       "from": "10:out_left",
       "to": "35:in_l"
@@ -312,22 +322,26 @@
       "from": "18:out_right",
       "to": "35:in_r"
     },
+     {
+      "from": "19:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "19:out_right",
+      "to": "35:in_r"
+    },
 
 
     {
       "from": "35:out_l",
-      "to": "50:in"
-    },
-    {
-      "from": "35:out_r",
-      "to": "51:in"
+      "to": "36:in"
     },
     { 
-      "from": "50:out",
+      "from": "36:out",
       "to": "37:in_l"
     },
     { 
-      "from": "51:out",
+      "from": "36:out",
       "to": "37:in_r"
     },
     { 
