@@ -176,8 +176,35 @@ client = jack.Client("Router_Loader")
 in_port = client.midi_inports.register("input")
 out_port = client.midi_outports.register("output")
 
-@client.set_process_callback
+
+@client.set_process_callback 
 def process(frames):
+    # --- 1) Incoming MIDI ---
+    # (This part of your code was fine)
+    for offset, data in in_port.incoming_midi_events():
+        try:
+            event_q.put_nowait(bytes(data))
+        except queue.Full:
+            pass # Consider logging this, as it means you are losing data
+
+    # --- 2) Outgoing MIDI ---
+    
+    # CRITICAL FIX: Clear the buffer ONCE at the start of the output phase.
+    # This ensures that if the queue is empty, we send silence.
+    out_port.clear_buffer()
+
+    # Now process all queued outgoing messages
+    while True:
+        try:
+            # We use 0 offset to send as soon as possible in this cycle.
+            # If sending multiple messages, they will be sent 'simultaneously'
+            # (in the same block), which MIDI devices handle fine.
+            msg = send_q.get_nowait()
+            out_port.write_midi_event(0, msg)
+        except queue.Empty:
+            break
+
+def process_old(frames):
     # 1) Incoming MIDI
     for offset, data in in_port.incoming_midi_events():
         try:
@@ -188,6 +215,10 @@ def process(frames):
     # 2) Outgoing MIDI
     # Process all queued outgoing messages
     while True:
+        try:
+            out_port.clear_buffer()
+        except Exception:
+            pass
         try:
             # We write at offset 0 to send immediately in this cycle
             msg = send_q.get_nowait()
@@ -352,23 +383,8 @@ def main() -> None:
 	            send_q.put(msg_bytes)
 	            print(f"[SL88 Sync] Queued ONE-SHOT Program Change: {active_piano} on Ch{COMMON_CHANNEL} (Hex: {msg_bytes.hex()})")
 
-	            # Wait until the process callback actually drains send_q (no arbitrary long sleep)
-	            deadline = time.monotonic() + 0.5
-	            while time.monotonic() < deadline:
-	                if send_q.empty():
-	                    break
-	                time.sleep(0.01)
-
 	        except Exception as e:
 	            print(f"[SL88 Sync] Failed: {e}")
-
-	        finally:
-	            # Always disconnect quickly to avoid any possible echo/loop
-	            try:
-	                client.disconnect(out_port, sl_dest)
-	                print(f"[SL88 Sync] Disconnected {src_name} -> {dst_name}")
-	            except Exception as e:
-	                print(f"[SL88 Sync] Warning during disconnect: {e}")
 
 
     print("Starting JACK MIDI listener for Program Changes...")
