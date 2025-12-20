@@ -326,41 +326,50 @@ def main() -> None:
         return
 
     # 4) Sync SL88 (Using Main Client)
+    	# 4) Sync SL88 (Using Main Client)
     if active_piano is not None:
-        print(f"[SL88 Sync] Attempting to sync SL88 to active piano {active_piano}...")
-        
-        target_port_name = "system:midi_playback_1"
-        try:
-            sl_dest = client.get_port_by_name(target_port_name)
-            
-            if sl_dest:
-                print(f"[SL88 Sync] Found destination: {sl_dest.name}")
-                client.connect(out_port, sl_dest)
-                print(f"[SL88 Sync] Connected {out_port.name} -> {sl_dest.name}")
-                
-                # Send Program Change
-                # Channel 2 (0-indexed 1) -> 0xC1
-                status = 0xC0 | (COMMON_CHANNEL - 1)
-                msg_bytes = bytes([status, active_piano])
-                
-                # Use the Queue to send exactly once
-                send_q.put(msg_bytes)
-                print(f"[SL88 Sync] Queued ONE-SHOT Program Change: {active_piano} on Ch{COMMON_CHANNEL} (Hex: {msg_bytes.hex()})")
-                
-                # Wait briefly to ensure the processing thread picks it up
-                time.sleep(1.0)
-                
-                # DISCONNECT to prevent feedback loops/flickering
-                print(f"[SL88 Sync] Disconnecting {out_port.name} -> {sl_dest.name} to avoid loops.")
-                try:
-                    client.disconnect(out_port, sl_dest)
-                except Exception as e:
-                    print(f"[SL88 Sync] Warning during disconnect: {e}")
-            else:
-                print(f"[SL88 Sync] Warning: Could not find JACK port '{target_port_name}'")
-                
-        except Exception as e:
-             print(f"[SL88 Sync] Failed: {e}")
+	    print(f"[SL88 Sync] Attempting to sync SL88 to active piano {active_piano}...")
+
+	    target_port_name = "system:midi_playback_1"
+	    src_name = out_port.name
+	    dst_name = target_port_name
+	    sl_dest = client.get_port_by_name(target_port_name)
+
+	    # Hard safety: never allow output -> our own input
+	    if dst_name == in_port.name:
+	        print(f"[SL88 Sync] ERROR: Refusing to connect {src_name} -> {dst_name} (self-loop)")
+	    else:
+	        try:
+	            # Connect by NAME to avoid any Port-object ambiguity
+	            client.connect(out_port, sl_dest)
+	            print(f"[SL88 Sync] Connected {src_name} -> {dst_name}")
+
+	            # Build Program Change (COMMON_CHANNEL is 1-16; mido uses 0-15)
+	            status = 0xC0 | (COMMON_CHANNEL - 1)
+	            msg_bytes = bytes([status, active_piano])
+
+	            # Queue exactly once
+	            send_q.put(msg_bytes)
+	            print(f"[SL88 Sync] Queued ONE-SHOT Program Change: {active_piano} on Ch{COMMON_CHANNEL} (Hex: {msg_bytes.hex()})")
+
+	            # Wait until the process callback actually drains send_q (no arbitrary long sleep)
+	            deadline = time.monotonic() + 0.5
+	            while time.monotonic() < deadline:
+	                if send_q.empty():
+	                    break
+	                time.sleep(0.01)
+
+	        except Exception as e:
+	            print(f"[SL88 Sync] Failed: {e}")
+
+	        finally:
+	            # Always disconnect quickly to avoid any possible echo/loop
+	            try:
+	                client.disconnect(out_port, sl_dest)
+	                print(f"[SL88 Sync] Disconnected {src_name} -> {dst_name}")
+	            except Exception as e:
+	                print(f"[SL88 Sync] Warning during disconnect: {e}")
+
 
     print("Starting JACK MIDI listener for Program Changes...")
     print(f"Listening on: {client.name}:input")
