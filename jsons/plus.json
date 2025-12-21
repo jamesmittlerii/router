@@ -1,0 +1,545 @@
+{
+  "version": 2,
+  "name": "Rhodes Sfizz Test",
+  "description": "sfizz → Calf Chorus → Calf Reverb → Gain2x2",
+  "width": 1200,
+  "height": 600,
+  "plugins": {
+    "10": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-k18",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/pianos/K18-Upright-Piano/K18-Upright-Piano.sfz"
+      },
+      "controls": {
+        "volume": -10.0
+      }
+    },
+    "11": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-salamander",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/pianos/SalamanderGrandPiano/Salamander Grand Piano V3.sfz"
+      },
+      "controls": {
+        "volume": -10.0
+      }
+    },
+    "12": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-cp80",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/CP80/CP80.sfz"
+      },
+      "controls": {
+        "volume": -10.0
+      }
+    },
+    "13": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-pianet",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Pianet T/Pianet T.sfz"
+      },
+      "controls": {
+        "volume": -10.0
+      }
+    },
+    "14": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-wurlitzer",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Wurlitzer/Wurlitzer.sfz"
+      },
+      "controls": {
+        "volume": -10.0
+      }
+    },
+    "15": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-ep200",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Wurlitzer EP200/Wurlitzer EP200.sfz"
+      },
+      "controls": {
+        "volume": -10.0
+      }
+    },
+    "16": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-rhodes",
+      "bypass": false,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/JRhodes3d-st-no-xfade/jRhodes3d-st-no-xfade.sfz"
+      },
+      "controls": {
+        "volume": -10.0
+      }
+    },
+       "17": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sf2-electricv-le",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Electric V LE/Programs/Electric V.sfz"
+      }
+    },
+    "18": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-clav",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Clavinet/Clavinet.sfz"
+      }
+    },
+    "19": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-ivy-ambient",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/pianos/Ivy Audio - Piano in 162 sfz/IvyAudio-PianoIn162-Ambient.sfz"
+      },
+      "controls": {
+        "volume": 6.0
+      }
+    },
+    "20": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-ivy-close",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/pianos/Ivy Audio - Piano in 162 sfz/IvyAudio-PianoIn162-Close.sfz"
+      },
+      "controls": {
+        "volume": 6.0
+      }
+    },
+    "21": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-accordion",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/accordions/Accordion/Accordion.sfz"
+      },
+      "controls": {
+        "volume": 6.0
+      }
+    },
+    "22": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-classical-guitar",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/guitars/Classical Acoustic Guitar/Classical Acoustic.sfz"
+      },
+      "controls": {
+        "volume": 6.0
+      }
+    },
+    "23": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-spanish-guitar",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/guitars/SpanishClassicalGuitar-SFZ+FLAC-20190618/SpanishClassicalGuitar-20190618.sfz"
+      },
+      "controls": {
+        "volume": 6.0
+      }
+    },
+    "24": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-button-accordion",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/accordions/Button Accordion HN SFZ+FLAC-20240329/PRESET Button Accordion HN tuned.sfz"
+      },
+      "controls": {
+        "volume": 6.0
+      }
+    },
+
+     "35": {
+      "uri": "http://calf.sourceforge.net/plugins/StereoTools",
+      "symbol": "stereotools",
+      "bypass": false,
+      "x": 350,
+      "y": 200,
+      "controls": {
+        "mode": 5.0
+      }
+     },
+     "50": {
+      "uri": "http://guitarix.sourceforge.net/plugins/gx_switchless_wah#wah",
+      "symbol": "wah-left",
+      "bypass": true,
+      "x": 350,
+      "y": 200
+     },
+     "51": {
+      "uri": "http://guitarix.sourceforge.net/plugins/gx_switchless_wah#wah",
+      "symbol": "wah-right",
+      "bypass": true,
+      "x": 350,
+      "y": 200
+     },
+     "37": {
+      "uri": "http://calf.sourceforge.net/plugins/Saturator",
+      "symbol": "saturator",
+      "bypass": true,
+      "x": 350,
+      "y": 200
+    },
+     "38": {
+      "uri": "http://lsp-plug.in/plugins/lv2/para_equalizer_x16_stereo",
+      "symbol": "eq",
+      "bypass": true,
+      "x": 350,
+      "y": 200
+    },
+     "39": {
+      "uri": "http://calf.sourceforge.net/plugins/Compressor",
+      "symbol": "compressor",
+      "bypass": true,
+      "x": 350,
+      "y": 200
+    },
+     "40": {
+      "uri": "http://calf.sourceforge.net/plugins/Pulsator",
+      "symbol": "pulsator",
+      "bypass": true,
+      "x": 350,
+      "y": 200
+    },
+    "41": {
+      "uri": "http://calf.sourceforge.net/plugins/MultiChorus",
+      "symbol": "chorus",
+      "x": 350,
+      "y": 200
+    },
+    "42": {
+      "uri": "http://calf.sourceforge.net/plugins/Reverb",
+      "symbol": "reverb",
+      "bypass": true,
+      "x": 600,
+      "y": 200
+    },
+    "43": {
+      "uri": "http://moddevices.com/plugins/mod-devel/Gain2x2",
+      "symbol": "gain",
+      "x": 850,
+      "y": 200,
+      "controls": {
+        "Gain": 0.0
+      }
+    },
+    "44": {
+      "uri": "http://lsp-plug.in/plugins/lv2/limiter_stereo",
+      "symbol": "limiter",
+      "bypass": true,
+      "x": 850,
+      "y": 200
+    }
+
+  },
+  "connections": [
+    {
+      "from": "system:midi_capture_1",
+      "to": "10:control"
+    },
+    {
+      "from": "system:midi_capture_1",
+      "to": "11:control"
+    },
+    {
+      "from": "system:midi_capture_1",
+      "to": "12:control"
+    },
+    {
+      "from": "system:midi_capture_1",
+      "to": "13:control"
+    },
+    {
+      "from": "system:midi_capture_1",
+      "to": "14:control"
+    },
+    {
+      "from": "system:midi_capture_1",
+      "to": "15:control"
+    },
+    {
+      "from": "system:midi_capture_1",
+      "to": "16:control"
+    },
+    { 
+      "from": "system:midi_capture_1",
+      "to": "17:control"
+    },
+     {
+      "from": "system:midi_capture_1",
+      "to": "18:control"
+    },
+     {
+      "from": "system:midi_capture_1",
+      "to": "19:control"
+    },
+     {
+      "from": "system:midi_capture_1",
+      "to": "20:control"
+    },
+     {
+      "from": "system:midi_capture_1",
+      "to": "21:control"
+    },
+     {
+      "from": "system:midi_capture_1",
+      "to": "22:control"
+    },
+     {
+      "from": "system:midi_capture_1",
+      "to": "23:control"
+    },
+     {
+      "from": "system:midi_capture_1",
+      "to": "24:control"
+    },
+    {
+      "from": "10:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "10:out_right",
+      "to": "35:in_r"
+    },
+    {
+      "from": "11:out_left",
+      "to": "35:in_l"
+    }, 
+    {
+      "from": "11:out_right",
+      "to": "35:in_r"
+    },
+    {
+      "from": "12:out_left",
+      "to": "35:in_l"
+    }, 
+    {
+      "from": "12:out_right",
+      "to": "35:in_r"
+    },
+    {
+      "from": "13:out_left",
+      "to": "35:in_l"
+    }, 
+    {
+      "from": "13:out_right",
+      "to": "35:in_r"
+    },
+    {
+      "from": "14:out_left",
+      "to": "35:in_l"
+    }, 
+    {
+      "from": "14:out_right",
+      "to": "35:in_r"
+    },
+    {
+      "from": "15:out_left",
+      "to": "35:in_l"
+    }, 
+    {
+      "from": "15:out_right",
+      "to": "35:in_r"
+    },
+    {
+      "from": "16:out_left",
+      "to": "35:in_l"
+    }, 
+    {
+      "from": "16:out_right",
+      "to": "35:in_r"
+    },
+     {
+      "from": "17:out_left",
+      "to": "35:in_l"
+    },
+     {
+      "from": "17:out_left",
+      "to": "35:in_r"
+    },
+     {
+      "from": "18:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "18:out_right",
+      "to": "35:in_r"
+    },
+     {
+      "from": "19:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "19:out_right",
+      "to": "35:in_r"
+    },
+     {
+      "from": "20:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "20:out_right",
+      "to": "35:in_r"
+    },
+     {
+      "from": "21:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "21:out_right",
+      "to": "35:in_r"
+    },
+     {
+      "from": "22:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "22:out_right",
+      "to": "35:in_r"
+    },
+     {
+      "from": "23:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "23:out_right",
+      "to": "35:in_r"
+    },
+     {
+      "from": "24:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "24:out_right",
+      "to": "35:in_r"
+    },
+
+
+    {
+      "from": "35:out_l",
+      "to": "50:in"
+    },
+    {
+      "from": "50:out",
+      "to": "37:in_l"
+    },
+    {
+      "from": "35:out_r",
+      "to": "51:in"
+    },
+    {
+      "from": "51:out",
+      "to": "37:in_r"
+    },
+    { 
+      "from": "37:out_l",
+      "to": "38:in_l"
+    },
+    { 
+      "from": "37:out_r",
+      "to": "38:in_r"
+    },
+    {
+      "from": "38:out_l",
+      "to": "39:in_l"
+    },
+    {
+      "from": "38:out_r",
+      "to": "39:in_r"
+    },
+    {
+      "from": "39:out_l",
+      "to": "40:in_l"
+    },
+    {
+      "from": "39:out_r",
+      "to": "40:in_r"
+    },
+    {
+      "from": "40:out_l",
+      "to": "41:in_l"
+    },
+    {
+      "from": "40:out_r",
+      "to": "41:in_r"
+    },
+    {
+      "from": "41:out_l",
+      "to": "42:in_l"
+    },
+    {
+      "from": "41:out_r",
+      "to": "42:in_r"
+    },
+    { 
+      "from": "42:out_l",
+      "to": "43:In1"
+    },
+    {
+      "from": "42:out_r",
+      "to": "43:In2"
+    },
+    { 
+      "from": "43:Out1",
+      "to": "44:in_l"
+    },
+    {
+      "from": "43:Out2",
+      "to": "44:in_r"
+    },
+    {
+      "from": "44:out_l",
+      "to": "system:playback_1"
+    },
+    {
+      "from": "44:out_r",
+      "to": "system:playback_2"
+    }
+  ]
+}
