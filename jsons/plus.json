@@ -144,32 +144,6 @@
     },
     "21": {
       "uri": "http://sfztools.github.io/sfizz",
-      "symbol": "sfizz-accordion",
-      "bypass": true,
-      "x": 100,
-      "y": 200,
-      "state": {
-        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/accordions/Accordion/Accordion.sfz"
-      },
-      "controls": {
-        "volume": 6.0
-      }
-    },
-    "22": {
-      "uri": "http://sfztools.github.io/sfizz",
-      "symbol": "sfizz-classical-guitar",
-      "bypass": true,
-      "x": 100,
-      "y": 200,
-      "state": {
-        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/guitars/Classical Acoustic Guitar/Classical Acoustic.sfz"
-      },
-      "controls": {
-        "volume": 6.0
-      }
-    },
-    "23": {
-      "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-spanish-guitar",
       "bypass": true,
       "x": 100,
@@ -181,7 +155,7 @@
         "volume": 6.0
       }
     },
-    "24": {
+    "22": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-button-accordion",
       "bypass": true,
@@ -331,14 +305,6 @@
       "from": "system:midi_capture_1",
       "to": "22:control"
     },
-     {
-      "from": "system:midi_capture_1",
-      "to": "23:control"
-    },
-     {
-      "from": "system:midi_capture_1",
-      "to": "24:control"
-    },
     {
       "from": "10:out_left",
       "to": "35:in_l"
@@ -443,24 +409,6 @@
       "from": "22:out_right",
       "to": "35:in_r"
     },
-     {
-      "from": "23:out_left",
-      "to": "35:in_l"
-    },
-    {
-      "from": "23:out_right",
-      "to": "35:in_r"
-    },
-     {
-      "from": "24:out_left",
-      "to": "35:in_l"
-    },
-    {
-      "from": "24:out_right",
-      "to": "35:in_r"
-    },
-
-
     {
       "from": "35:out_l",
       "to": "50:in"

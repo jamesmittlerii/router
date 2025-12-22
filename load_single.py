@@ -25,6 +25,7 @@ import sys
 import time
 import queue
 import threading
+import subprocess
 import signal
 from pathlib import Path
 from typing import Any, Optional
@@ -38,6 +39,7 @@ MOD_HOST = os.environ.get("MOD_HOST", "127.0.0.1")
 MOD_PORT = int(os.environ.get("MOD_PORT", "5555"))
 TIMEOUT_S = float(os.environ.get("MOD_TIMEOUT", "5.0"))
 COMMON_CHANNEL = 2  # User confirmed Channel 2
+KILL_PC = 50 # set this to a PC to force a shutdown
 
 # Configuration for State Persistence
 STATE_FILE = Path(os.environ.get("ROUTER_STATE", "/var/lib/router/last_state.json"))
@@ -434,6 +436,11 @@ def main() -> None:
             if prog == last_prog:
                 continue
             last_prog = prog
+
+            if prog == KILL_PC:
+                print("[midi-shutdown] Shutdown via Program Change")
+                subprocess.run(["sudo", "/bin/systemctl", "poweroff"])
+                break
 
             print(f"🎹 PROGRAM CHANGE -> program={prog}, channel={msg.channel}")
 
