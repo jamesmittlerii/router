@@ -38,8 +38,12 @@ REPLY_CHANNEL = 7            # expect CC replies here (mido channel 6)
 
 def find_midi_port_by_alias(client: jack.Client, needle: str) -> Optional[jack.Port]:
     needle_lower = needle.lower()
-    for name in client.get_ports():
-        port = client.get_port_by_name(name)
+    for entry in client.get_ports():
+        # get_ports() returns Port objects on some jack bindings, names on others.
+        if isinstance(entry, str):
+            port = client.get_port_by_name(entry)
+        else:
+            port = entry
         if port is None:
             continue
         for alias in port.aliases:
