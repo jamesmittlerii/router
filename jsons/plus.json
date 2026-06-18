@@ -268,13 +268,36 @@
 },
 
 "28": {
-  "uri": "https://ho-ro.net/connie/lv2",  
+  "uri": "https://ho-ro.net/connie/lv2",
   "symbol": "horo-connie",
   "bypass": true,
   "gain": 7.0,
   "x": 300,
-  "y": 20
-},    
+  "y": 20,
+  "controls": {
+    "db_16": 0.75,
+    "db_8": 1.0,
+    "db_4": 0.75,
+    "db_iv": 1.0,
+    "db_flute": 1.0,
+    "db_reed": 0.5,
+    "db_sharp": 0.0,
+    "db_perc": 0.0,
+    "db_vibrato": 0.0,
+    "db_reverb": 0.5,
+    "master": 0.25,
+    "transpose": 0.5,
+    "preset": 0.0
+  },
+  "midi_cc": {
+    "5": "db_16",
+    "6": "db_8",
+    "7": "db_4",
+    "8": "db_iv",
+    "9": "db_flute",
+    "10": "db_reed"
+  }
+},
 
      "35": {
       "uri": "http://calf.sourceforge.net/plugins/StereoTools",

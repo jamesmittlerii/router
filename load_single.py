@@ -27,6 +27,7 @@ import queue
 import threading
 import subprocess
 import signal
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -186,6 +187,64 @@ def expand_port(port: str) -> str:
             return f"effect_{left}:{right}"
     return port
 
+
+@dataclass(frozen=True)
+class CcParamMapping:
+    instance: int
+    param: str
+    min_val: float = 0.0
+    max_val: float = 1.0
+
+
+def parse_midi_cc_entry(raw: Any) -> tuple[str, float, float]:
+    """Parse a midi_cc map value (symbol string or {param, min, max} object)."""
+    if isinstance(raw, str):
+        return raw, 0.0, 1.0
+    if isinstance(raw, dict):
+        param = raw.get("param") or raw.get("symbol")
+        if not param:
+            raise ValueError("midi_cc entry dict needs 'param' or 'symbol'")
+        try:
+            min_val = float(raw.get("min", 0.0))
+            max_val = float(raw.get("max", 1.0))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid min/max in midi_cc entry: {raw}") from exc
+        return str(param), min_val, max_val
+    raise ValueError(f"unsupported midi_cc entry type: {type(raw).__name__}")
+
+
+def build_cc_map(plugins: dict[str, Any]) -> dict[int, CcParamMapping]:
+    """Build MIDI CC number -> plugin param mapping from plugin midi_cc sections."""
+    cc_map: dict[int, CcParamMapping] = {}
+    for sid, plugin in plugins.items():
+        if not isinstance(plugin, dict):
+            continue
+        midi_cc = plugin.get("midi_cc")
+        if not isinstance(midi_cc, dict) or not midi_cc:
+            continue
+        inst = int(sid)
+        for cc_key, entry in midi_cc.items():
+            try:
+                cc_num = int(cc_key)
+                param, min_val, max_val = parse_midi_cc_entry(entry)
+            except (TypeError, ValueError) as exc:
+                print(f"Warning: skipping midi_cc {sid}[{cc_key!r}]: {exc}")
+                continue
+            if cc_num in cc_map:
+                prev = cc_map[cc_num]
+                print(
+                    f"Warning: CC {cc_num} remapped {prev.instance}:{prev.param}"
+                    f" -> {inst}:{param}"
+                )
+            cc_map[cc_num] = CcParamMapping(inst, param, min_val, max_val)
+    return cc_map
+
+
+def midi_cc_to_param(midi_val: int, mapping: CcParamMapping) -> float:
+    """Scale 7-bit MIDI (0-127) to plugin param range."""
+    t = max(0, min(127, midi_val)) / 127.0
+    return mapping.min_val + (mapping.max_val - mapping.min_val) * t
+
 # ---- JACK MIDI Handling ----
 
 event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)  # Program Change (SL88)
@@ -274,8 +333,14 @@ def connect_jack_midi_source(port_name: str, dest_port: jack.Port) -> None:
         print(f"Connection error ({port_name}): {e}")
 
 
-def drain_cc_events(last_cc_values: dict[int, int]) -> None:
-    """Print control changes on CC_CHANNEL (skip consecutive duplicates per CC)."""
+def drain_cc_events(
+    last_cc_values: dict[int, int],
+    cc_map: dict[int, CcParamMapping],
+) -> None:
+    """Apply control changes on CC_CHANNEL via mod-host param_set."""
+    if not cc_map:
+        return
+
     cc_mido_channel = CC_CHANNEL - 1
     while True:
         try:
@@ -288,10 +353,28 @@ def drain_cc_events(last_cc_values: dict[int, int]) -> None:
             continue
         if msg.channel != cc_mido_channel:
             continue
+
+        mapping = cc_map.get(msg.control)
+        if mapping is None:
+            continue
         if last_cc_values.get(msg.control) == msg.value:
             continue
+
         last_cc_values[msg.control] = msg.value
-        print(f"🎚️  CC ch{CC_CHANNEL} cc={msg.control} value={msg.value}")
+        param_val = midi_cc_to_param(msg.value, mapping)
+        try:
+            mod_param_set(mapping.instance, mapping.param, param_val)
+        except Exception as e:
+            print(
+                f"Failed CC ch{CC_CHANNEL} cc={msg.control}"
+                f" -> {mapping.instance}:{mapping.param}: {e}"
+            )
+            continue
+
+        print(
+            f"🎚️  CC ch{CC_CHANNEL} cc={msg.control}"
+            f" -> {mapping.instance}:{mapping.param}={param_val:.3f}"
+        )
 
 # ---- Main ----
 
@@ -312,6 +395,7 @@ def main() -> None:
 
     plugins: dict[str, Any] = pb.get("plugins", {})
     connections: list[dict[str, str]] = pb.get("connections", [])
+    cc_map = build_cc_map(plugins)
 
     print("== Loading Plugins == ")
     piano_ids = []
@@ -483,7 +567,13 @@ def main() -> None:
 
     print(f"Listening for Control Changes on ch{CC_CHANNEL}...")
     print(f"Listening on: {client.name}:cc_input")
-    connect_jack_midi_source(CC_TARGET_PORT, cc_in_port)
+    if cc_map:
+        for cc_num in sorted(cc_map):
+            m = cc_map[cc_num]
+            print(f"  CC {cc_num} -> {m.instance}:{m.param}")
+        connect_jack_midi_source(CC_TARGET_PORT, cc_in_port)
+    else:
+        print("  (no plugin midi_cc mappings in pedalboard)")
 
     print("Listening for MIDI events... (Ctrl+C to stop)")
     print(f"Mapping: Program Change X -> Piano Instance X. Detected Pianos: {sorted(piano_ids)}")
@@ -496,10 +586,10 @@ def main() -> None:
             try:
                 data = event_q.get(timeout=0.25)
             except queue.Empty:
-                drain_cc_events(last_cc_values)
+                drain_cc_events(last_cc_values, cc_map)
                 continue
 
-            drain_cc_events(last_cc_values)
+            drain_cc_events(last_cc_values, cc_map)
 
             msg = decode_mido(data)
             if msg is None:
