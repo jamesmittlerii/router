@@ -40,6 +40,8 @@ MOD_PORT = int(os.environ.get("MOD_PORT", "5555"))
 TIMEOUT_S = float(os.environ.get("MOD_TIMEOUT", "5.0"))
 COMMON_CHANNEL = 2  # User confirmed Channel 2
 KILL_PC = 50 # set this to a PC to force a shutdown
+OUTPUT_GAIN_URI = "http://moddevices.com/plugins/mod-devel/Gain2x2"
+OUTPUT_GAIN_PARAM = "Gain"
 
 # Configuration for State Persistence
 STATE_FILE = Path(os.environ.get("ROUTER_STATE", "/var/lib/router/last_state.json"))
@@ -158,6 +160,17 @@ def mod_connect(src: str, dst: str) -> None:
     expect_zero(resp, f"connect {src} -> {dst}")
 
 
+def get_plugin_gain(p: dict[str, Any], fallback: float) -> float:
+    """
+    Read optional top-level plugin gain from JSON.
+    """
+    raw = p.get("gain", fallback)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return fallback
+
+
 def expand_port(port: str) -> str:
     """
     Convert pedalboard shorthand "40:out_left" to mod-host "effect_40:out_left".
@@ -258,10 +271,28 @@ def main() -> None:
     print("== Loading Plugins == ")
     piano_ids = []
     active_piano = None
+    program_gains: dict[int, float] = {}
+    output_gain_instance: Optional[int] = None
+    output_gain_default = 0.0
 
     # Track resources for cleanup
     loaded_ids: list[int] = []
     active_connections: list[tuple[str, str]] = []
+
+    for sid, plugin in plugins.items():
+        if not isinstance(plugin, dict):
+            continue
+        if plugin.get("uri") != OUTPUT_GAIN_URI:
+            continue
+
+        output_gain_instance = int(sid)
+        out_controls = plugin.get("controls", {})
+        if isinstance(out_controls, dict):
+            try:
+                output_gain_default = float(out_controls.get(OUTPUT_GAIN_PARAM, 0.0))
+            except (TypeError, ValueError):
+                output_gain_default = 0.0
+        break
 
     # 1) Add plugins (sorted by numeric id for deterministic behavior)
     for sid in sorted(plugins.keys(), key=lambda x: int(x)):
@@ -273,6 +304,7 @@ def main() -> None:
            "https://github.com/brummer10/Fluida.lv2",
         ):
             piano_ids.append(inst)
+            program_gains[inst] = get_plugin_gain(p, output_gain_default)
 
         print(f'== add {inst} {uri}')
         try:
@@ -331,6 +363,14 @@ def main() -> None:
                     active_piano = inst
             except Exception as e:
                  print(f"Failed bypass {inst}: {e}")
+
+    if output_gain_instance is not None and active_piano is not None:
+        startup_gain = program_gains.get(active_piano, output_gain_default)
+        print(f"== output gain for {active_piano}: {startup_gain} dB")
+        try:
+            mod_param_set(output_gain_instance, OUTPUT_GAIN_PARAM, startup_gain)
+        except Exception as e:
+            print(f"Failed output gain set for {active_piano}: {e}")
 
     # Small delay helps samplers settle before wiring audio
     time.sleep(0.2)
@@ -456,6 +496,14 @@ def main() -> None:
                          mod_bypass(inst, bypass_val)
                     except Exception as e:
                         print(f"   Failed to set bypass for {inst}: {e}")
+
+                if output_gain_instance is not None:
+                    switch_gain = program_gains.get(prog, output_gain_default)
+                    print(f"   Setting output gain to {switch_gain} dB")
+                    try:
+                        mod_param_set(output_gain_instance, OUTPUT_GAIN_PARAM, switch_gain)
+                    except Exception as e:
+                        print(f"   Failed output gain set for {prog}: {e}")
                 
                 # Save state
                 try:
