@@ -9,7 +9,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-k18",
       "bypass": true,
-      "gain": 0.0,
+      "gain": 18.0,
       "x": 100,
       "y": 200,
       "state": {
@@ -23,7 +23,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-salamander",
       "bypass": true,
-      "gain": 0.0,
+      "gain": 13.5,
       "x": 100,
       "y": 200,
       "state": {
@@ -37,7 +37,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-cp80",
       "bypass": true,
-      "gain": 0.0,
+      "gain": 5.0,
       "x": 100,
       "y": 200,
       "state": {
@@ -51,7 +51,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-pianet",
       "bypass": true,
-      "gain": 0.0,
+      "gain": 6.5,
       "x": 100,
       "y": 200,
       "state": {
@@ -65,7 +65,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-wurlitzer",
       "bypass": true,
-      "gain": 0.0,
+      "gain": 7.0,
       "x": 100,
       "y": 200,
       "state": {
@@ -79,7 +79,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-ep200",
       "bypass": true,
-      "gain": 0.0,
+      "gain": 6.0,
       "x": 100,
       "y": 200,
       "state": {
@@ -93,7 +93,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-rhodes",
       "bypass": false,
-      "gain": 0.0,
+      "gain": -0.5,
       "x": 100,
       "y": 200,
       "state": {
@@ -107,7 +107,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfz-electricv-le",
       "bypass": true,
-      "gain": 0.0,
+      "gain": 10.5,
       "x": 100,
       "y": 200,
       "state": {
@@ -118,7 +118,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-clav",
       "bypass": true,
-      "gain": 0.0,
+      "gain": 20.0,
       "x": 100,
       "y": 200,
       "state": {
@@ -129,7 +129,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-ivy-ambient",
       "bypass": true,
-      "gain": 0.0,
+      "gain": 20.0,
       "x": 100,
       "y": 200,
       "state": {
@@ -143,7 +143,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-ivy-close",
       "bypass": true,
-      "gain": 0.0,
+      "gain": 19.5,
       "x": 100,
       "y": 200,
       "state": {
@@ -157,7 +157,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-spanish-guitar",
       "bypass": true,
-      "gain": 0.0,
+      "gain": 6.5,
       "x": 100,
       "y": 200,
       "state": {
@@ -171,7 +171,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-button-accordion",
       "bypass": true,
-      "gain": 0.0,
+      "gain": 1.5,
       "x": 100,
       "y": 200,
       "state": {
@@ -185,6 +185,7 @@
       "uri": "https://github.com/brummer10/Fluida.lv2",
       "symbol": "sf2-westcoast-guitar",
       "bypass": true,
+      "gain": 20.0,
       "x": 100,
       "y": 200, 
       "state": {
@@ -195,6 +196,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-mdm-guitar",
       "bypass": true,
+      "gain": 10.0,
       "x": 100,
       "y": 200,
       "state": {
@@ -208,6 +210,7 @@
   "uri": "http://studionumbersix.com/foo/lv2/yc20",
   "symbol": "foo-yc20",
   "bypass": true,
+  "gain": 20.0,
   "x": 300,
   "y": 200,
   "controls": {
@@ -241,6 +244,7 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-caveman",
       "bypass": true,
+      "gain": 20.0,
       "x": 100,
       "y": 200,
       "state": {
@@ -255,6 +259,7 @@
   "uri": "http://bristol.sourceforge.net/lv2/vox",
   "symbol": "bristol-vox",
   "bypass": true,
+  "gain": 3.5,
   "x": 300,
   "y": 20,
 "controls": {
@@ -266,6 +271,7 @@
   "uri": "https://ho-ro.net/connie/lv2",  
   "symbol": "horo-connie",
   "bypass": true,
+  "gain": 7.0,
   "x": 300,
   "y": 20
 },    
