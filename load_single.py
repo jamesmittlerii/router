@@ -29,7 +29,7 @@ import subprocess
 import signal
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import jack
 import mido
@@ -55,6 +55,17 @@ FILTER_CHANNEL = None  # Set to 0-15 to filter by channel, or None for all
 # Launch Control XL3 drawbar CC (1-based MIDI channel, matches controller display)
 CC_TARGET_PORT = os.environ.get("CC_TARGET_PORT", "system:midi_capture_5")
 CC_CHANNEL = int(os.environ.get("CC_CHANNEL", "3"))  # 1-16
+CC_SOFT_TAKEOVER = os.environ.get("CC_SOFT_TAKEOVER", "1").lower() not in (
+    "0",
+    "false",
+    "no",
+    "off",
+)
+CC_PICKUP_THRESHOLD = max(0, min(127, int(os.environ.get("CC_PICKUP_THRESHOLD", "1"))))
+CC_STATE_SAVE_DEBOUNCE_S = float(os.environ.get("CC_STATE_SAVE_DEBOUNCE_S", "0.5"))
+
+_state_save_lock = threading.Lock()
+_last_state_write_mono = 0.0
 
 
 stop_event = threading.Event()
@@ -245,6 +256,200 @@ def midi_cc_to_param(midi_val: int, mapping: CcParamMapping) -> float:
     t = max(0, min(127, midi_val)) / 127.0
     return mapping.min_val + (mapping.max_val - mapping.min_val) * t
 
+
+def param_to_midi(param_val: float, mapping: CcParamMapping) -> int:
+    """Scale plugin param to nearest 7-bit MIDI value."""
+    span = mapping.max_val - mapping.min_val
+    if span <= 0.0:
+        return 0
+    t = (float(param_val) - mapping.min_val) / span
+    return max(0, min(127, round(t * 127.0)))
+
+
+@dataclass
+class CcPickupState:
+    armed: bool = False
+    last_midi: Optional[int] = None
+    target_midi: int = 0
+
+
+def seed_applied_params(plugins: dict[str, Any]) -> dict[tuple[int, str], float]:
+    """Collect startup control values from pedalboard JSON."""
+    applied: dict[tuple[int, str], float] = {}
+    for sid, plugin in plugins.items():
+        if not isinstance(plugin, dict):
+            continue
+        controls = plugin.get("controls") or {}
+        if not isinstance(controls, dict):
+            continue
+        inst = int(sid)
+        for symbol, val in controls.items():
+            try:
+                applied[(inst, str(symbol))] = float(val)
+            except (TypeError, ValueError):
+                continue
+    return applied
+
+
+def init_cc_pickup(
+    cc_map: dict[int, CcParamMapping],
+    applied_params: dict[tuple[int, str], float],
+) -> dict[int, CcPickupState]:
+    pickup: dict[int, CcPickupState] = {}
+    for cc, mapping in cc_map.items():
+        param_val = applied_params.get(
+            (mapping.instance, mapping.param),
+            mapping.min_val,
+        )
+        pickup[cc] = CcPickupState(
+            armed=False,
+            target_midi=param_to_midi(param_val, mapping),
+        )
+    return pickup
+
+
+def reset_pickup_for_instance(
+    instance: int,
+    cc_map: dict[int, CcParamMapping],
+    applied_params: dict[tuple[int, str], float],
+    cc_pickup: dict[int, CcPickupState],
+) -> list[int]:
+    """Re-arm soft takeover for CCs mapped to this plugin instance."""
+    reset_ccs: list[int] = []
+    for cc, mapping in cc_map.items():
+        if mapping.instance != instance:
+            continue
+        param_val = applied_params.get(
+            (mapping.instance, mapping.param),
+            mapping.min_val,
+        )
+        cc_pickup[cc] = CcPickupState(
+            armed=False,
+            target_midi=param_to_midi(param_val, mapping),
+        )
+        reset_ccs.append(cc)
+    return reset_ccs
+
+
+def pickup_should_apply(
+    state: CcPickupState,
+    midi_val: int,
+    threshold: int = CC_PICKUP_THRESHOLD,
+) -> bool:
+    """Return True when the fader has caught the current param value."""
+    if state.armed:
+        return True
+
+    target = state.target_midi
+    if abs(midi_val - target) <= threshold:
+        return True
+
+    prev = state.last_midi
+    if prev is not None and (
+        (prev <= target <= midi_val) or (midi_val <= target <= prev)
+    ):
+        return True
+
+    return False
+
+
+def instances_with_cc_maps(cc_map: dict[int, CcParamMapping]) -> set[int]:
+    return {mapping.instance for mapping in cc_map.values()}
+
+
+def mapped_param_keys(cc_map: dict[int, CcParamMapping]) -> set[tuple[int, str]]:
+    return {(mapping.instance, mapping.param) for mapping in cc_map.values()}
+
+
+def build_plugin_controls_snapshot(
+    applied_params: dict[tuple[int, str], float],
+    cc_map: dict[int, CcParamMapping],
+) -> dict[str, dict[str, float]]:
+    """Snapshot only params referenced by midi_cc mappings."""
+    snapshot: dict[str, dict[str, float]] = {}
+    for mapping in cc_map.values():
+        val = applied_params.get((mapping.instance, mapping.param))
+        if val is None:
+            continue
+        inst_key = str(mapping.instance)
+        snapshot.setdefault(inst_key, {})[mapping.param] = val
+    return snapshot
+
+
+def load_router_state() -> tuple[Optional[int], dict[str, dict[str, float]]]:
+    if not STATE_FILE.exists():
+        return None, {}
+    try:
+        data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[State] Warning: Failed to load state file: {e}")
+        return None, {}
+    restored = data.get("last_active_piano")
+    plugin_controls = data.get("plugin_controls", {})
+    if not isinstance(plugin_controls, dict):
+        plugin_controls = {}
+    return restored, plugin_controls
+
+
+def merge_saved_plugin_controls(
+    applied_params: dict[tuple[int, str], float],
+    saved_controls: dict[str, Any],
+    cc_map: dict[int, CcParamMapping],
+) -> list[tuple[int, str, float]]:
+    """Overlay saved midi_cc param values onto applied_params. Returns applied triples."""
+    mapped = mapped_param_keys(cc_map)
+    restored: list[tuple[int, str, float]] = []
+    for inst_key, params in saved_controls.items():
+        if not isinstance(params, dict):
+            continue
+        try:
+            inst = int(inst_key)
+        except (TypeError, ValueError):
+            continue
+        for symbol, val in params.items():
+            sym = str(symbol)
+            if (inst, sym) not in mapped:
+                continue
+            try:
+                fval = float(val)
+            except (TypeError, ValueError):
+                continue
+            applied_params[(inst, sym)] = fval
+            restored.append((inst, sym, fval))
+    return restored
+
+
+def save_router_state(
+    last_active_piano: Optional[int],
+    applied_params: dict[tuple[int, str], float],
+    cc_map: dict[int, CcParamMapping],
+    *,
+    force: bool = False,
+) -> None:
+    global _last_state_write_mono
+    if not cc_map:
+        payload: dict[str, Any] = {"last_active_piano": last_active_piano}
+    else:
+        payload = {
+            "last_active_piano": last_active_piano,
+            "plugin_controls": build_plugin_controls_snapshot(applied_params, cc_map),
+        }
+
+    now = time.monotonic()
+    with _state_save_lock:
+        if (
+            not force
+            and CC_STATE_SAVE_DEBOUNCE_S > 0
+            and (now - _last_state_write_mono) < CC_STATE_SAVE_DEBOUNCE_S
+        ):
+            return
+        try:
+            STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            STATE_FILE.write_text(json.dumps(payload), encoding="utf-8")
+            _last_state_write_mono = now
+        except Exception as e:
+            print(f"[State] Failed to save state file: {e}")
+
 # ---- JACK MIDI Handling ----
 
 event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)  # Program Change (SL88)
@@ -334,8 +539,11 @@ def connect_jack_midi_source(port_name: str, dest_port: jack.Port) -> None:
 
 
 def drain_cc_events(
-    last_cc_values: dict[int, int],
+    last_seen_midi: dict[int, int],
     cc_map: dict[int, CcParamMapping],
+    applied_params: dict[tuple[int, str], float],
+    cc_pickup: dict[int, CcPickupState],
+    persist_state: Optional[Callable[..., None]] = None,
 ) -> None:
     """Apply control changes on CC_CHANNEL via mod-host param_set."""
     if not cc_map:
@@ -357,10 +565,27 @@ def drain_cc_events(
         mapping = cc_map.get(msg.control)
         if mapping is None:
             continue
-        if last_cc_values.get(msg.control) == msg.value:
+        if last_seen_midi.get(msg.control) == msg.value:
             continue
 
-        last_cc_values[msg.control] = msg.value
+        last_seen_midi[msg.control] = msg.value
+        state = cc_pickup.get(msg.control)
+        if state is None:
+            state = CcPickupState()
+            cc_pickup[msg.control] = state
+
+        if CC_SOFT_TAKEOVER:
+            if not pickup_should_apply(state, msg.value):
+                state.last_midi = msg.value
+                continue
+            if not state.armed:
+                state.armed = True
+                print(
+                    f"🎚️  CC ch{CC_CHANNEL} cc={msg.control} pickup"
+                    f" (target={state.target_midi}, fader={msg.value})"
+                )
+
+        state.last_midi = msg.value
         param_val = midi_cc_to_param(msg.value, mapping)
         try:
             mod_param_set(mapping.instance, mapping.param, param_val)
@@ -371,10 +596,15 @@ def drain_cc_events(
             )
             continue
 
+        applied_params[(mapping.instance, mapping.param)] = param_val
+        state.target_midi = msg.value
+
         print(
             f"🎚️  CC ch{CC_CHANNEL} cc={msg.control}"
             f" -> {mapping.instance}:{mapping.param}={param_val:.3f}"
         )
+        if persist_state is not None:
+            persist_state()
 
 # ---- Main ----
 
@@ -396,6 +626,12 @@ def main() -> None:
     plugins: dict[str, Any] = pb.get("plugins", {})
     connections: list[dict[str, str]] = pb.get("connections", [])
     cc_map = build_cc_map(plugins)
+    applied_params = seed_applied_params(plugins)
+    restored_piano, saved_plugin_controls = load_router_state()
+    restored_cc = merge_saved_plugin_controls(
+        applied_params, saved_plugin_controls, cc_map
+    )
+    cc_mapped_instances = instances_with_cc_maps(cc_map)
 
     print("== Loading Plugins == ")
     piano_ids = []
@@ -445,15 +681,11 @@ def main() -> None:
         except Exception as e:
             print(f"Failed to add plugin {inst}: {e}")
 
-    # 1.5) Load saved state (Last Active Piano)
-    restored_piano: Optional[int] = None
-    try:
-        if STATE_FILE.exists():
-            saved_data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-            restored_piano = saved_data.get("last_active_piano")
-            print(f"[State] Restored last active piano: {restored_piano}")
-    except Exception as e:
-        print(f"[State] Warning: Failed to load state file: {e}")
+    # 1.5) Log restored router state
+    if restored_piano is not None:
+        print(f"[State] Restored last active piano: {restored_piano}")
+    for inst, symbol, fval in restored_cc:
+        print(f"[State] Restored CC param {inst}:{symbol}={fval}")
 
     # 2) Apply state (patch_set) and controls (param_set)
     print("== Applying State & Controls ==")
@@ -471,11 +703,17 @@ def main() -> None:
 
         controls = p.get("controls", {}) or {}
         for symbol, val in controls.items():
-            print(f"== param_set {inst} {symbol} {val}")
+            sym = str(symbol)
+            effective = applied_params.get((inst, sym), val)
+            print(f"== param_set {inst} {sym} {effective}")
             try:
-                mod_param_set(inst, symbol, val)
+                mod_param_set(inst, sym, effective)
+                try:
+                    applied_params[(inst, sym)] = float(effective)
+                except (TypeError, ValueError):
+                    pass
             except Exception as e:
-                print(f"Failed param_set {inst} {symbol}: {e}")
+                print(f"Failed param_set {inst} {sym}: {e}")
 
         # 3) Optional bypass flag (boolean)
         if "bypass" in p:
@@ -495,6 +733,8 @@ def main() -> None:
                     active_piano = inst
             except Exception as e:
                  print(f"Failed bypass {inst}: {e}")
+
+    cc_pickup = init_cc_pickup(cc_map, applied_params)
 
     if output_gain_instance is not None and active_piano is not None:
         startup_gain = program_gains.get(active_piano, output_gain_default)
@@ -571,6 +811,8 @@ def main() -> None:
         for cc_num in sorted(cc_map):
             m = cc_map[cc_num]
             print(f"  CC {cc_num} -> {m.instance}:{m.param}")
+        takeover = "on" if CC_SOFT_TAKEOVER else "off"
+        print(f"  Soft takeover: {takeover} (threshold={CC_PICKUP_THRESHOLD})")
         connect_jack_midi_source(CC_TARGET_PORT, cc_in_port)
     else:
         print("  (no plugin midi_cc mappings in pedalboard)")
@@ -579,17 +821,34 @@ def main() -> None:
     print(f"Mapping: Program Change X -> Piano Instance X. Detected Pianos: {sorted(piano_ids)}")
 
     last_prog = None
-    last_cc_values: dict[int, int] = {}
+    last_seen_midi: dict[int, int] = {}
+
+    def persist_state(force: bool = False) -> None:
+        save_router_state(active_piano, applied_params, cc_map, force=force)
+
+    if CC_SOFT_TAKEOVER and active_piano in cc_mapped_instances:
+        reset_ccs = reset_pickup_for_instance(
+            active_piano, cc_map, applied_params, cc_pickup
+        )
+        if reset_ccs:
+            print(
+                f"[CC] Soft takeover armed for instance {active_piano}"
+                f" (CCs {reset_ccs})"
+            )
 
     try:
         while not stop_event.is_set():
             try:
                 data = event_q.get(timeout=0.25)
             except queue.Empty:
-                drain_cc_events(last_cc_values, cc_map)
+                drain_cc_events(
+                    last_seen_midi, cc_map, applied_params, cc_pickup, persist_state
+                )
                 continue
 
-            drain_cc_events(last_cc_values, cc_map)
+            drain_cc_events(
+                last_seen_midi, cc_map, applied_params, cc_pickup, persist_state
+            )
 
             msg = decode_mido(data)
             if msg is None:
@@ -628,6 +887,16 @@ def main() -> None:
                     except Exception as e:
                         print(f"   Failed to set bypass for {inst}: {e}")
 
+                if CC_SOFT_TAKEOVER and prog in cc_mapped_instances:
+                    reset_ccs = reset_pickup_for_instance(
+                        prog, cc_map, applied_params, cc_pickup
+                    )
+                    if reset_ccs:
+                        print(
+                            f"   [CC] Soft takeover armed for instance {prog}"
+                            f" (CCs {reset_ccs})"
+                        )
+
                 if output_gain_instance is not None:
                     switch_gain = program_gains.get(prog, output_gain_default)
                     print(f"   Setting output gain to {switch_gain} dB")
@@ -635,11 +904,10 @@ def main() -> None:
                         mod_param_set(output_gain_instance, OUTPUT_GAIN_PARAM, switch_gain)
                     except Exception as e:
                         print(f"   Failed output gain set for {prog}: {e}")
-                
-                # Save state
+
+                active_piano = prog
                 try:
-                    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-                    STATE_FILE.write_text(json.dumps({"last_active_piano": prog}), encoding="utf-8")
+                    persist_state(force=True)
                     print(f"   [State] Saved active piano {prog} to {STATE_FILE}")
                 except Exception as e:
                      print(f"   [State] Failed to save state: {e}")
@@ -650,6 +918,11 @@ def main() -> None:
         print("\nStopping...")
     finally:
         print("\n== Cleaning Up Session ==")
+
+        try:
+            persist_state(force=True)
+        except Exception:
+            pass
         
         # 1. Disconnect ports
         for src, dst in reversed(active_connections):
