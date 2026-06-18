@@ -271,6 +271,9 @@ def main() -> None:
         if uri in (
            "http://sfztools.github.io/sfizz",
            "https://github.com/brummer10/Fluida.lv2",
+           "http://studionumbersix.com/foo/lv2/yc20",
+           "http://bristol.sourceforge.net/lv2/vox",
+           "https://ho-ro.net/connie/lv2",
         ):
             piano_ids.append(inst)
 

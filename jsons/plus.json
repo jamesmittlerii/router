@@ -15,7 +15,7 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/pianos/K18-Upright-Piano/K18-Upright-Piano.sfz"
       },
       "controls": {
-        "volume": -10.0
+        "volume": 0.0
       }
     },
     "11": {
@@ -28,7 +28,7 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/pianos/SalamanderGrandPiano/Salamander Grand Piano V3.sfz"
       },
       "controls": {
-        "volume": -10.0
+        "volume": 0.0
       }
     },
     "12": {
@@ -41,7 +41,7 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/CP80/CP80.sfz"
       },
       "controls": {
-        "volume": -10.0
+        "volume": 0.0
       }
     },
     "13": {
@@ -54,7 +54,7 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Pianet T/Pianet T.sfz"
       },
       "controls": {
-        "volume": -10.0
+        "volume": 0.0
       }
     },
     "14": {
@@ -67,7 +67,7 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Wurlitzer/Wurlitzer.sfz"
       },
       "controls": {
-        "volume": -10.0
+        "volume": 0.0
       }
     },
     "15": {
@@ -80,7 +80,7 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Wurlitzer EP200/Wurlitzer EP200.sfz"
       },
       "controls": {
-        "volume": -10.0
+        "volume": 0.0
       }
     },
     "16": {
@@ -93,12 +93,12 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/JRhodes3d-st-no-xfade/jRhodes3d-st-no-xfade.sfz"
       },
       "controls": {
-        "volume": -10.0
+        "volume": 0.0
       }
     },
        "17": {
       "uri": "http://sfztools.github.io/sfizz",
-      "symbol": "sf2-electricv-le",
+      "symbol": "sfz-electricv-le",
       "bypass": true,
       "x": 100,
       "y": 200,
@@ -152,7 +152,7 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/guitars/SpanishClassicalGuitar-SFZ+FLAC-20190618/SpanishClassicalGuitar-20190618.sfz"
       },
       "controls": {
-        "volume": 6.0
+        "volume": 0.0
       }
     },
     "22": {
@@ -165,9 +165,97 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/accordions/Button Accordion HN SFZ+FLAC-20240329/PRESET Button Accordion HN tuned.sfz"
       },
       "controls": {
-        "volume": 6.0
+        "volume": 0.0
       }
     },
+       "23": {
+      "uri": "https://github.com/brummer10/Fluida.lv2",
+      "symbol": "sf2-westcoast-guitar",
+      "bypass": true,
+      "x": 100,
+      "y": 200, 
+      "state": {
+        "https://github.com/brummer10/Fluida.lv2#soundfont": "/usr/local/share/sf2/guitars/West Coast Guitar/West_Coast_Guitar.sf2"
+      }
+    },  
+    "24": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-mdm-guitar",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/guitars/MDM Classical Guitar v1.0/MDM Classical Guitar v1.0.sfz"
+      },
+      "controls": {
+        "volume": 0.0
+      }
+    },
+"25": {
+  "uri": "http://studionumbersix.com/foo/lv2/yc20",
+  "symbol": "foo-yc20",
+  "bypass": true,
+  "x": 300,
+  "y": 200,
+  "controls": {
+    "volume": 1.0,
+    "bass_volume": 0.0,
+    "realism": 0.0,
+    "depth": 0.08,
+    "speed": 0.22,
+    "balance": 0.65,
+    "bright": 0.8,
+    "b_16": 0.0,
+    "b_8": 0.0,
+    "bass_manual": 0.0,
+    "i_16": 0.2,
+    "i_8": 1.0,
+    "i_4": 0.85,
+    "i_2_2p3": 0.3,
+    "i_2": 0.55,
+    "i_1_3p5": 0.15,
+    "i_1": 0.1,
+    "ii_16": 0.1,
+    "ii_8": 0.75,
+    "ii_4": 0.55,
+    "ii_2": 0.25,
+    "percussive": 0.2,
+    "pitch": 0.0
+  }
+},
+
+"26": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-caveman",
+      "bypass": true,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/organs/Caveman_Cosmonaut/Programs/main.sfz"
+      },
+      "controls": {
+        "volume": 1.0
+      }
+    },
+
+"27": {
+  "uri": "http://bristol.sourceforge.net/lv2/vox",
+  "symbol": "bristol-vox",
+  "bypass": true,
+  "x": 300,
+  "y": 20,
+"controls": {
+      "gain": 0.25
+     }
+},
+
+"28": {
+  "uri": "https://ho-ro.net/connie/lv2",  
+  "symbol": "horo-connie",
+  "bypass": true,
+  "x": 300,
+  "y": 20
+},    
 
      "35": {
       "uri": "http://calf.sourceforge.net/plugins/StereoTools",
@@ -240,7 +328,7 @@
       "x": 850,
       "y": 200,
       "controls": {
-        "Gain": 0.0
+        "Gain": 6.0
       }
     },
     "44": {
@@ -305,6 +393,47 @@
       "from": "system:midi_capture_1",
       "to": "22:control"
     },
+     {
+      "from": "system:midi_capture_1",
+      "to": "24:control"
+    },
+  {
+      "from": "system:midi_capture_1",
+      "to": "26:control"
+    },
+  {
+      "from": "system:midi_capture_1",
+      "to": "27:midi_in"
+    },
+  {
+      "from": "system:midi_capture_1",
+      "to": "28:midi"
+    },
+    {  
+      "from": "system:midi_capture_1",
+      "to": "23:MIDI_IN"
+    },
+    {
+         "from": "23:out",
+         "to": "35:in_l"
+       },
+        {
+         "from": "23:out1",
+         "to": "35:in_r"
+       },  
+
+     {
+   "from": "system:midi_capture_1",
+   "to": "25:midi"
+    },
+  {
+    "from": "25:output_L",
+     "to": "35:in_l"
+   },
+   {                                                                                                                      
+  "from": "25:output_R",            
+   "to": "35:in_r"
+   },
     {
       "from": "10:out_left",
       "to": "35:in_l"
@@ -409,6 +538,39 @@
       "from": "22:out_right",
       "to": "35:in_r"
     },
+     {
+      "from": "24:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "24:out_right",
+      "to": "35:in_r"
+    },
+ {
+      "from": "26:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "26:out_right",
+      "to": "35:in_r"
+    },
+ {
+      "from": "27:audio_l",
+      "to": "35:in_l"
+    },
+    {
+      "from": "27:audio_r",
+      "to": "35:in_r"
+    },
+ {
+      "from": "28:output_L",
+      "to": "35:in_l"
+    },
+    {
+      "from": "28:output_R",
+      "to": "35:in_r"
+    },
+
     {
       "from": "35:out_l",
       "to": "50:in"
