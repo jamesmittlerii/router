@@ -51,6 +51,10 @@ STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 TARGET_PORT = "system:midi_capture_1"
 FILTER_CHANNEL = None  # Set to 0-15 to filter by channel, or None for all
 
+# Launch Control XL3 drawbar CC (1-based MIDI channel, matches controller display)
+CC_TARGET_PORT = os.environ.get("CC_TARGET_PORT", "system:midi_capture_5")
+CC_CHANNEL = int(os.environ.get("CC_CHANNEL", "3"))  # 1-16
+
 
 stop_event = threading.Event()
 
@@ -184,23 +188,30 @@ def expand_port(port: str) -> str:
 
 # ---- JACK MIDI Handling ----
 
-event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)  # Incoming
+event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)  # Program Change (SL88)
+cc_event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)  # Control Change (LCXL3)
 send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=128)   # Outgoing
 
 client = jack.Client("Router_Loader")
 in_port = client.midi_inports.register("input")
+cc_in_port = client.midi_inports.register("cc_input")
 out_port = client.midi_outports.register("output")
 
 
 @client.set_process_callback 
 def process(frames):
     # --- 1) Incoming MIDI ---
-    # (This part of your code was fine)
     for offset, data in in_port.incoming_midi_events():
         try:
             event_q.put_nowait(bytes(data))
         except queue.Full:
             pass # Consider logging this, as it means you are losing data
+
+    for offset, data in cc_in_port.incoming_midi_events():
+        try:
+            cc_event_q.put_nowait(bytes(data))
+        except queue.Full:
+            pass
 
     # --- 2) Outgoing MIDI ---
     
@@ -247,6 +258,40 @@ def decode_mido(event_bytes: bytes):
         return mido.Message.from_bytes(event_bytes)
     except ValueError:
         return None
+
+
+def connect_jack_midi_source(port_name: str, dest_port: jack.Port) -> None:
+    """Connect a JACK MIDI capture port to one of our input ports."""
+    try:
+        src_port = client.get_port_by_name(port_name)
+        if src_port:
+            client.connect(src_port, dest_port)
+            print(f"Connected {port_name} -> {dest_port.name}")
+        else:
+            print(f"Warning: Could not find '{port_name}'. Connect manually, e.g.:")
+            print(f"  jack_connect {port_name} {dest_port.name}")
+    except jack.JackError as e:
+        print(f"Connection error ({port_name}): {e}")
+
+
+def drain_cc_events(last_cc_values: dict[int, int]) -> None:
+    """Print control changes on CC_CHANNEL (skip consecutive duplicates per CC)."""
+    cc_mido_channel = CC_CHANNEL - 1
+    while True:
+        try:
+            data = cc_event_q.get_nowait()
+        except queue.Empty:
+            break
+
+        msg = decode_mido(data)
+        if msg is None or msg.type != "control_change":
+            continue
+        if msg.channel != cc_mido_channel:
+            continue
+        if last_cc_values.get(msg.control) == msg.value:
+            continue
+        last_cc_values[msg.control] = msg.value
+        print(f"🎚️  CC ch{CC_CHANNEL} cc={msg.control} value={msg.value}")
 
 # ---- Main ----
 
@@ -434,38 +479,31 @@ def main() -> None:
 
     print("Starting JACK MIDI listener for Program Changes...")
     print(f"Listening on: {client.name}:input")
+    connect_jack_midi_source(TARGET_PORT, in_port)
 
-    # Try to auto-connect for Input
-    try:
-        src_port = client.get_port_by_name(TARGET_PORT)
-        if src_port:
-            client.connect(src_port, in_port)
-            print(f"Connected {TARGET_PORT} -> {client.name}:input")
-        else:
-            print(f"Warning: Could not find '{TARGET_PORT}'. Connect manually, e.g.:")
-            print(f"  jack_connect {TARGET_PORT} {client.name}:input")
-    except jack.JackError as e:
-        print(f"Connection error: {e}")
+    print(f"Listening for Control Changes on ch{CC_CHANNEL}...")
+    print(f"Listening on: {client.name}:cc_input")
+    connect_jack_midi_source(CC_TARGET_PORT, cc_in_port)
 
     print("Listening for MIDI events... (Ctrl+C to stop)")
     print(f"Mapping: Program Change X -> Piano Instance X. Detected Pianos: {sorted(piano_ids)}")
 
     last_prog = None
+    last_cc_values: dict[int, int] = {}
 
     try:
         while not stop_event.is_set():
             try:
-                data = event_q.get(timeout=1.0)
+                data = event_q.get(timeout=0.25)
             except queue.Empty:
+                drain_cc_events(last_cc_values)
                 continue
+
+            drain_cc_events(last_cc_values)
 
             msg = decode_mido(data)
             if msg is None:
                 continue
-
-            # Debug print
-            # print(f"Received: {msg!r}")
-
 
             if msg.type != "program_change":
                 continue
