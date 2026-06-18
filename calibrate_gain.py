@@ -322,8 +322,8 @@ class Calibrator:
 
         self.client = jack.Client("gain_calibrator", no_start_server=True)
         self.midi_out = self.client.midi_outports.register("midi_out")
-        self.audio_l = self.client.audio_inports.register("gain_l")
-        self.audio_r = self.client.audio_inports.register("gain_r")
+        self.audio_l = self.client.inports.register("gain_l")
+        self.audio_r = self.client.inports.register("gain_r")
 
         @self.client.set_process_callback
         def process(frames: int) -> int:
