@@ -45,6 +45,9 @@ TIMEOUT_S = float(os.environ.get("MOD_TIMEOUT", "5.0"))
 INSTRUMENT_URIS = (
     "http://sfztools.github.io/sfizz",
     "https://github.com/brummer10/Fluida.lv2",
+    "http://studionumbersix.com/foo/lv2/yc20",
+    "http://bristol.sourceforge.net/lv2/vox",
+    "https://ho-ro.net/connie/lv2",
 )
 OUTPUT_GAIN_URI = "http://moddevices.com/plugins/mod-devel/Gain2x2"
 OUTPUT_GAIN_PARAM = "Gain"
@@ -191,6 +194,7 @@ class Instrument:
     instance_id: int
     symbol: str
     current_gain: float
+    midi_port: str
 
 
 @dataclass
@@ -209,29 +213,50 @@ def get_plugin_gain(plugin: dict[str, Any], fallback: float = 0.0) -> float:
         return fallback
 
 
+def parse_midi_targets(connections: list[dict[str, str]]) -> dict[int, str]:
+    """Map instrument instance id -> mod-host MIDI input port from pedalboard wiring."""
+    targets: dict[int, str] = {}
+    for conn in connections:
+        if conn.get("from") != "system:midi_capture_1":
+            continue
+        to = conn.get("to", "")
+        if ":" not in to:
+            continue
+        inst_s, _ = to.split(":", 1)
+        if not inst_s.isdigit():
+            continue
+        targets[int(inst_s)] = expand_port(to)
+    return targets
+
+
 def parse_pedalboard(pb: dict[str, Any]) -> Pedalboard:
     plugins: dict[str, Any] = pb.get("plugins", {})
     connections: list[dict[str, str]] = pb.get("connections", [])
     gain_instance: Optional[int] = None
     instruments: list[Instrument] = []
+    midi_targets = parse_midi_targets(connections)
 
     for sid, plugin in plugins.items():
         if not isinstance(plugin, dict):
             continue
-        uri = plugin.get("uri", "")
-        inst = int(sid)
-        if uri == OUTPUT_GAIN_URI:
-            gain_instance = inst
-        if uri in INSTRUMENT_URIS:
-            instruments.append(
-                Instrument(
-                    instance_id=inst,
-                    symbol=str(plugin.get("symbol", sid)),
-                    current_gain=get_plugin_gain(plugin),
-                )
-            )
+        if plugin.get("uri") == OUTPUT_GAIN_URI:
+            gain_instance = int(sid)
 
-    instruments.sort(key=lambda item: item.instance_id)
+    for inst in sorted(midi_targets):
+        plugin = plugins.get(str(inst))
+        if not isinstance(plugin, dict):
+            continue
+        if plugin.get("uri") not in INSTRUMENT_URIS:
+            continue
+        instruments.append(
+            Instrument(
+                instance_id=inst,
+                symbol=str(plugin.get("symbol", inst)),
+                current_gain=get_plugin_gain(plugin),
+                midi_port=midi_targets[inst],
+            )
+        )
+
     return Pedalboard(
         instruments=instruments,
         gain_instance=gain_instance,
@@ -345,12 +370,8 @@ class Calibrator:
         inst = self.gain_instance
         return f"effect_{inst}:Out1", f"effect_{inst}:Out2"
 
-    def _instrument_midi_port(self, inst: int) -> str:
-        plugin = self.board.plugins.get(str(inst), {})
-        uri = plugin.get("uri", "")
-        if uri == "https://github.com/brummer10/Fluida.lv2":
-            return f"effect_{inst}:MIDI_IN"
-        return f"effect_{inst}:control"
+    def _instrument_midi_port(self, item: Instrument) -> str:
+        return item.midi_port
 
     def activate(self) -> None:
         self.client.activate()
@@ -386,7 +407,7 @@ class Calibrator:
         time.sleep(0.1)
 
     def measure_instrument(self, item: Instrument) -> float:
-        midi_port = self._instrument_midi_port(item.instance_id)
+        midi_port = self._instrument_midi_port(item)
         try:
             self.client.connect(self.midi_out, midi_port)
         except jack.JackError as exc:
