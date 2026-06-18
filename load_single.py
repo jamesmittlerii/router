@@ -176,6 +176,20 @@ def mod_connect(src: str, dst: str) -> None:
     expect_zero(resp, f"connect {src} -> {dst}")
 
 
+def mod_disconnect_quiet(src: str, dst: str) -> None:
+    try:
+        send_cmd(f'disconnect "{src}" "{dst}"')
+    except Exception as e:
+        print(f"Failed to disconnect {src}->{dst}: {e}")
+
+
+def mod_remove_quiet(instance_id: int) -> None:
+    try:
+        send_cmd(f"remove {instance_id}")
+    except Exception as e:
+        print(f"Failed to remove plugin {instance_id}: {e}")
+
+
 def get_plugin_gain(p: dict[str, Any], fallback: float) -> float:
     """
     Read optional top-level plugin gain from JSON.
@@ -452,69 +466,61 @@ def save_router_state(
 
 # ---- JACK MIDI Handling ----
 
+JACK_CLIENT_NAME = "Router_Loader"
+JACK_OPEN_RETRIES = 5
+JACK_OPEN_RETRY_DELAY_S = 0.5
+
 event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)  # Program Change (SL88)
 cc_event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)  # Control Change (LCXL3)
 send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=128)   # Outgoing
 
-client = jack.Client("Router_Loader")
-in_port = client.midi_inports.register("input")
-cc_in_port = client.midi_inports.register("cc_input")
-out_port = client.midi_outports.register("output")
 
+def create_jack_client() -> tuple[jack.Client, jack.Port, jack.Port, jack.Port]:
+    """Open the router JACK MIDI client (retries if a stale client name lingers)."""
+    last_err: Optional[Exception] = None
+    for attempt in range(1, JACK_OPEN_RETRIES + 1):
+        try:
+            c = jack.Client(JACK_CLIENT_NAME, no_start_server=True)
+            inp = c.midi_inports.register("input")
+            cc_inp = c.midi_inports.register("cc_input")
+            outp = c.midi_outports.register("output")
 
-@client.set_process_callback 
-def process(frames):
-    # --- 1) Incoming MIDI ---
-    for offset, data in in_port.incoming_midi_events():
-        try:
-            event_q.put_nowait(bytes(data))
-        except queue.Full:
-            pass # Consider logging this, as it means you are losing data
+            @c.set_process_callback
+            def process(frames, _inp=inp, _cc_inp=cc_inp, _outp=outp):
+                for offset, data in _inp.incoming_midi_events():
+                    try:
+                        event_q.put_nowait(bytes(data))
+                    except queue.Full:
+                        pass
 
-    for offset, data in cc_in_port.incoming_midi_events():
-        try:
-            cc_event_q.put_nowait(bytes(data))
-        except queue.Full:
-            pass
+                for offset, data in _cc_inp.incoming_midi_events():
+                    try:
+                        cc_event_q.put_nowait(bytes(data))
+                    except queue.Full:
+                        pass
 
-    # --- 2) Outgoing MIDI ---
-    
-    # CRITICAL FIX: Clear the buffer ONCE at the start of the output phase.
-    # This ensures that if the queue is empty, we send silence.
-    out_port.clear_buffer()
+                _outp.clear_buffer()
+                while True:
+                    try:
+                        msg = send_q.get_nowait()
+                        _outp.write_midi_event(0, msg)
+                    except queue.Empty:
+                        break
 
-    # Now process all queued outgoing messages
-    while True:
-        try:
-            # We use 0 offset to send as soon as possible in this cycle.
-            # If sending multiple messages, they will be sent 'simultaneously'
-            # (in the same block), which MIDI devices handle fine.
-            msg = send_q.get_nowait()
-            out_port.write_midi_event(0, msg)
-        except queue.Empty:
-            break
+            return c, inp, cc_inp, outp
+        except jack.JackOpenError as exc:
+            last_err = exc
+            if attempt < JACK_OPEN_RETRIES:
+                print(
+                    f"JACK client '{JACK_CLIENT_NAME}' unavailable"
+                    f" (attempt {attempt}/{JACK_OPEN_RETRIES}): {exc}"
+                )
+                time.sleep(JACK_OPEN_RETRY_DELAY_S)
+    raise RuntimeError(
+        f"Could not open JACK client '{JACK_CLIENT_NAME}' after"
+        f" {JACK_OPEN_RETRIES} attempts: {last_err}"
+    ) from last_err
 
-def process_old(frames):
-    # 1) Incoming MIDI
-    for offset, data in in_port.incoming_midi_events():
-        try:
-            event_q.put_nowait(bytes(data))
-        except queue.Full:
-            pass
-            
-    # 2) Outgoing MIDI
-    # Process all queued outgoing messages
-    while True:
-        try:
-            out_port.clear_buffer()
-        except Exception:
-            pass
-        try:
-            # We write at offset 0 to send immediately in this cycle
-            msg = send_q.get_nowait()
-            out_port.write_midi_event(0, msg)
-        except queue.Empty:
-            break
 
 def decode_mido(event_bytes: bytes):
     """Decode raw MIDI bytes into a mido Message if possible."""
@@ -524,18 +530,95 @@ def decode_mido(event_bytes: bytes):
         return None
 
 
-def connect_jack_midi_source(port_name: str, dest_port: jack.Port) -> None:
+def connect_jack_midi_source(
+    jack_client: jack.Client,
+    port_name: str,
+    dest_port: jack.Port,
+    jack_midi_connections: list[tuple[jack.Port, jack.Port]],
+) -> None:
     """Connect a JACK MIDI capture port to one of our input ports."""
     try:
-        src_port = client.get_port_by_name(port_name)
+        src_port = jack_client.get_port_by_name(port_name)
         if src_port:
-            client.connect(src_port, dest_port)
+            jack_client.connect(src_port, dest_port)
+            jack_midi_connections.append((src_port, dest_port))
             print(f"Connected {port_name} -> {dest_port.name}")
         else:
             print(f"Warning: Could not find '{port_name}'. Connect manually, e.g.:")
             print(f"  jack_connect {port_name} {dest_port.name}")
     except jack.JackError as e:
         print(f"Connection error ({port_name}): {e}")
+
+
+def disconnect_jack_midi_connections(
+    jack_client: jack.Client,
+    jack_midi_connections: list[tuple[jack.Port, jack.Port]],
+) -> None:
+    for src, dst in reversed(jack_midi_connections):
+        try:
+            jack_client.disconnect(src, dst)
+            print(f"Disconnected JACK {src.name} -> {dst.name}")
+        except jack.JackError as e:
+            print(f"Failed to disconnect JACK {src.name}->{dst.name}: {e}")
+
+
+def close_jack_client(jack_client: Optional[jack.Client], activated: bool) -> None:
+    if jack_client is None:
+        return
+    if activated:
+        try:
+            jack_client.deactivate()
+        except Exception as e:
+            print(f"JACK deactivate failed: {e}")
+    try:
+        jack_client.close()
+    except Exception as e:
+        print(f"JACK close failed: {e}")
+
+
+def sweep_stale_plugins(plugin_ids: list[int]) -> None:
+    """Remove leftover mod-host instances from an unclean prior run."""
+    if not plugin_ids:
+        return
+    print("== Sweeping stale mod-host plugins ==")
+    for inst in reversed(plugin_ids):
+        try:
+            resp = send_cmd(f"remove {inst}")
+            code = parse_resp(resp)
+            if code is not None and code >= 0:
+                print(f"  Removed stale plugin {inst}")
+        except Exception:
+            pass
+
+
+def cleanup_session(
+    *,
+    loaded_ids: list[int],
+    active_connections: list[tuple[str, str]],
+    jack_midi_connections: list[tuple[jack.Port, jack.Port]],
+    jack_client: Optional[jack.Client],
+    jack_activated: bool,
+    persist_state_fn: Optional[Callable[..., None]] = None,
+) -> None:
+    print("\n== Cleaning Up Session ==")
+
+    if persist_state_fn is not None:
+        try:
+            persist_state_fn(force=True)
+        except Exception:
+            pass
+
+    if jack_client is not None:
+        disconnect_jack_midi_connections(jack_client, jack_midi_connections)
+        close_jack_client(jack_client, jack_activated)
+
+    for src, dst in reversed(active_connections):
+        print(f"Disconnecting {src} -> {dst}")
+        mod_disconnect_quiet(src, dst)
+
+    for inst in reversed(loaded_ids):
+        print(f"Removing plugin {inst}")
+        mod_remove_quiet(inst)
 
 
 def drain_cc_events(
@@ -632,6 +715,7 @@ def main() -> None:
         applied_params, saved_plugin_controls, cc_map
     )
     cc_mapped_instances = instances_with_cc_maps(cc_map)
+    plugin_ids = sorted((int(sid) for sid in plugins.keys()))
 
     print("== Loading Plugins == ")
     piano_ids = []
@@ -640,203 +724,199 @@ def main() -> None:
     output_gain_instance: Optional[int] = None
     output_gain_default = 0.0
 
-    # Track resources for cleanup
     loaded_ids: list[int] = []
     active_connections: list[tuple[str, str]] = []
-
-    for sid, plugin in plugins.items():
-        if not isinstance(plugin, dict):
-            continue
-        if plugin.get("uri") != OUTPUT_GAIN_URI:
-            continue
-
-        output_gain_instance = int(sid)
-        out_controls = plugin.get("controls", {})
-        if isinstance(out_controls, dict):
-            try:
-                output_gain_default = float(out_controls.get(OUTPUT_GAIN_PARAM, 0.0))
-            except (TypeError, ValueError):
-                output_gain_default = 0.0
-        break
-
-    # 1) Add plugins (sorted by numeric id for deterministic behavior)
-    for sid in sorted(plugins.keys(), key=lambda x: int(x)):
-        p = plugins[sid]
-        uri = p["uri"]
-        inst = int(sid)
-        if uri in (
-           "http://sfztools.github.io/sfizz",
-           "https://github.com/brummer10/Fluida.lv2",
-           "http://studionumbersix.com/foo/lv2/yc20",
-           "http://bristol.sourceforge.net/lv2/vox",
-           "https://ho-ro.net/connie/lv2",
-        ):
-            piano_ids.append(inst)
-            program_gains[inst] = get_plugin_gain(p, output_gain_default)
-
-        print(f'== add {inst} {uri}')
-        try:
-            mod_add(uri, inst)
-            loaded_ids.append(inst)
-        except Exception as e:
-            print(f"Failed to add plugin {inst}: {e}")
-
-    # 1.5) Log restored router state
-    if restored_piano is not None:
-        print(f"[State] Restored last active piano: {restored_piano}")
-    for inst, symbol, fval in restored_cc:
-        print(f"[State] Restored CC param {inst}:{symbol}={fval}")
-
-    # 2) Apply state (patch_set) and controls (param_set)
-    print("== Applying State & Controls ==")
-    for sid in sorted(plugins.keys(), key=lambda x: int(x)):
-        p = plugins[sid]
-        inst = int(sid)
-
-        state = p.get("state", {}) or {}
-        for key, val in state.items():
-            print(f"== patch_set {inst} {key} = {val}")
-            try:
-                mod_patch_set(inst, key, str(val))
-            except Exception as e:
-                print(f"Failed patch_set {inst} {key}: {e}")
-
-        controls = p.get("controls", {}) or {}
-        for symbol, val in controls.items():
-            sym = str(symbol)
-            effective = applied_params.get((inst, sym), val)
-            print(f"== param_set {inst} {sym} {effective}")
-            try:
-                mod_param_set(inst, sym, effective)
-                try:
-                    applied_params[(inst, sym)] = float(effective)
-                except (TypeError, ValueError):
-                    pass
-            except Exception as e:
-                print(f"Failed param_set {inst} {sym}: {e}")
-
-        # 3) Optional bypass flag (boolean)
-        if "bypass" in p:
-            bypass_on = bool(p["bypass"])
-
-            # OVERRIDE: If we have a restored active piano, force that ONE to be active, others bypassed
-            if restored_piano is not None and inst in piano_ids:
-                if inst == restored_piano:
-                    bypass_on = False
-                else:
-                    bypass_on = True
-
-            print(f"== bypass {inst} {1 if bypass_on else 0}")
-            try:
-                mod_bypass(inst, bypass_on)
-                if not bypass_on and inst in piano_ids:
-                    active_piano = inst
-            except Exception as e:
-                 print(f"Failed bypass {inst}: {e}")
-
-    cc_pickup = init_cc_pickup(cc_map, applied_params)
-
-    if output_gain_instance is not None and active_piano is not None:
-        startup_gain = program_gains.get(active_piano, output_gain_default)
-        print(f"== output gain for {active_piano}: {startup_gain} dB")
-        try:
-            mod_param_set(output_gain_instance, OUTPUT_GAIN_PARAM, startup_gain)
-        except Exception as e:
-            print(f"Failed output gain set for {active_piano}: {e}")
-
-    # Small delay helps samplers settle before wiring audio
-    time.sleep(0.2)
-
-    # 3) Connect ports
-    print("== Connecting Ports ==")
-    for c in connections:
-        src = expand_port(c["from"])
-        dst = expand_port(c["to"])
-        print(f"== connect {src} -> {dst}")
-        try:
-            mod_connect(src, dst)
-            active_connections.append((src, dst))
-        except Exception as e:
-             print(f"Failed connect {src}->{dst}: {e}")
-
-    print("== done loading ==")
-    print("---------------------------------------------------")
-    print(f"Started JACK client: {client.name}")
-    
-    # Activate JACK Client
-    try:
-        client.activate()
-    except Exception as e:
-        print(f"Failed to activate JACK client: {e}")
-        return
-
-    # 4) Sync SL88 (Using Main Client)
-    	# 4) Sync SL88 (Using Main Client)
-    if active_piano is not None:
-	    print(f"[SL88 Sync] Attempting to sync SL88 to active piano {active_piano}...")
-
-	    target_port_name = "system:midi_playback_1"
-	    src_name = out_port.name
-	    dst_name = target_port_name
-	    sl_dest = client.get_port_by_name(target_port_name)
-
-	    # Hard safety: never allow output -> our own input
-	    if dst_name == in_port.name:
-	        print(f"[SL88 Sync] ERROR: Refusing to connect {src_name} -> {dst_name} (self-loop)")
-	    else:
-	        try:
-	            # Connect by NAME to avoid any Port-object ambiguity
-	            client.connect(out_port, sl_dest)
-	            print(f"[SL88 Sync] Connected {src_name} -> {dst_name}")
-
-	            # Build Program Change (COMMON_CHANNEL is 1-16; mido uses 0-15)
-	            status = 0xC0 | (COMMON_CHANNEL - 1)
-	            msg_bytes = bytes([status, active_piano])
-
-	            # Queue exactly once
-	            send_q.put(msg_bytes)
-	            print(f"[SL88 Sync] Queued ONE-SHOT Program Change: {active_piano} on Ch{COMMON_CHANNEL} (Hex: {msg_bytes.hex()})")
-
-	        except Exception as e:
-	            print(f"[SL88 Sync] Failed: {e}")
-
-
-    print("Starting JACK MIDI listener for Program Changes...")
-    print(f"Listening on: {client.name}:input")
-    connect_jack_midi_source(TARGET_PORT, in_port)
-
-    print(f"Listening for Control Changes on ch{CC_CHANNEL}...")
-    print(f"Listening on: {client.name}:cc_input")
-    if cc_map:
-        for cc_num in sorted(cc_map):
-            m = cc_map[cc_num]
-            print(f"  CC {cc_num} -> {m.instance}:{m.param}")
-        takeover = "on" if CC_SOFT_TAKEOVER else "off"
-        print(f"  Soft takeover: {takeover} (threshold={CC_PICKUP_THRESHOLD})")
-        connect_jack_midi_source(CC_TARGET_PORT, cc_in_port)
-    else:
-        print("  (no plugin midi_cc mappings in pedalboard)")
-
-    print("Listening for MIDI events... (Ctrl+C to stop)")
-    print(f"Mapping: Program Change X -> Piano Instance X. Detected Pianos: {sorted(piano_ids)}")
-
-    last_prog = None
-    last_seen_midi: dict[int, int] = {}
+    jack_midi_connections: list[tuple[jack.Port, jack.Port]] = []
+    jack_client: Optional[jack.Client] = None
+    jack_activated = False
+    in_port: Optional[jack.Port] = None
+    cc_in_port: Optional[jack.Port] = None
+    out_port: Optional[jack.Port] = None
 
     def persist_state(force: bool = False) -> None:
         save_router_state(active_piano, applied_params, cc_map, force=force)
 
-    if CC_SOFT_TAKEOVER and active_piano in cc_mapped_instances:
-        reset_ccs = reset_pickup_for_instance(
-            active_piano, cc_map, applied_params, cc_pickup
-        )
-        if reset_ccs:
-            print(
-                f"[CC] Soft takeover armed for instance {active_piano}"
-                f" (CCs {reset_ccs})"
-            )
-
     try:
+        sweep_stale_plugins(plugin_ids)
+
+        jack_client, in_port, cc_in_port, out_port = create_jack_client()
+        print(f"Opened JACK client: {jack_client.name}")
+
+        for sid, plugin in plugins.items():
+            if not isinstance(plugin, dict):
+                continue
+            if plugin.get("uri") != OUTPUT_GAIN_URI:
+                continue
+
+            output_gain_instance = int(sid)
+            out_controls = plugin.get("controls", {})
+            if isinstance(out_controls, dict):
+                try:
+                    output_gain_default = float(out_controls.get(OUTPUT_GAIN_PARAM, 0.0))
+                except (TypeError, ValueError):
+                    output_gain_default = 0.0
+            break
+
+        for sid in sorted(plugins.keys(), key=lambda x: int(x)):
+            p = plugins[sid]
+            uri = p["uri"]
+            inst = int(sid)
+            if uri in (
+               "http://sfztools.github.io/sfizz",
+               "https://github.com/brummer10/Fluida.lv2",
+               "http://studionumbersix.com/foo/lv2/yc20",
+               "http://bristol.sourceforge.net/lv2/vox",
+               "https://ho-ro.net/connie/lv2",
+            ):
+                piano_ids.append(inst)
+                program_gains[inst] = get_plugin_gain(p, output_gain_default)
+
+            print(f'== add {inst} {uri}')
+            try:
+                mod_add(uri, inst)
+                loaded_ids.append(inst)
+            except Exception as e:
+                print(f"Failed to add plugin {inst}: {e}")
+
+        if restored_piano is not None:
+            print(f"[State] Restored last active piano: {restored_piano}")
+        for inst, symbol, fval in restored_cc:
+            print(f"[State] Restored CC param {inst}:{symbol}={fval}")
+
+        print("== Applying State & Controls ==")
+        for sid in sorted(plugins.keys(), key=lambda x: int(x)):
+            p = plugins[sid]
+            inst = int(sid)
+
+            state = p.get("state", {}) or {}
+            for key, val in state.items():
+                print(f"== patch_set {inst} {key} = {val}")
+                try:
+                    mod_patch_set(inst, key, str(val))
+                except Exception as e:
+                    print(f"Failed patch_set {inst} {key}: {e}")
+
+            controls = p.get("controls", {}) or {}
+            for symbol, val in controls.items():
+                sym = str(symbol)
+                effective = applied_params.get((inst, sym), val)
+                print(f"== param_set {inst} {sym} {effective}")
+                try:
+                    mod_param_set(inst, sym, effective)
+                    try:
+                        applied_params[(inst, sym)] = float(effective)
+                    except (TypeError, ValueError):
+                        pass
+                except Exception as e:
+                    print(f"Failed param_set {inst} {sym}: {e}")
+
+            if "bypass" in p:
+                bypass_on = bool(p["bypass"])
+
+                if restored_piano is not None and inst in piano_ids:
+                    if inst == restored_piano:
+                        bypass_on = False
+                    else:
+                        bypass_on = True
+
+                print(f"== bypass {inst} {1 if bypass_on else 0}")
+                try:
+                    mod_bypass(inst, bypass_on)
+                    if not bypass_on and inst in piano_ids:
+                        active_piano = inst
+                except Exception as e:
+                    print(f"Failed bypass {inst}: {e}")
+
+        cc_pickup = init_cc_pickup(cc_map, applied_params)
+
+        if output_gain_instance is not None and active_piano is not None:
+            startup_gain = program_gains.get(active_piano, output_gain_default)
+            print(f"== output gain for {active_piano}: {startup_gain} dB")
+            try:
+                mod_param_set(output_gain_instance, OUTPUT_GAIN_PARAM, startup_gain)
+            except Exception as e:
+                print(f"Failed output gain set for {active_piano}: {e}")
+
+        time.sleep(0.2)
+
+        print("== Connecting Ports ==")
+        for c in connections:
+            src = expand_port(c["from"])
+            dst = expand_port(c["to"])
+            print(f"== connect {src} -> {dst}")
+            try:
+                mod_connect(src, dst)
+                active_connections.append((src, dst))
+            except Exception as e:
+                print(f"Failed connect {src}->{dst}: {e}")
+
+        print("== done loading ==")
+        print("---------------------------------------------------")
+
+        jack_client.activate()
+        jack_activated = True
+        print(f"Activated JACK client: {jack_client.name}")
+
+        if active_piano is not None:
+            print(f"[SL88 Sync] Attempting to sync SL88 to active piano {active_piano}...")
+
+            target_port_name = "system:midi_playback_1"
+            src_name = out_port.name
+            dst_name = target_port_name
+            sl_dest = jack_client.get_port_by_name(target_port_name)
+
+            if dst_name == in_port.name:
+                print(f"[SL88 Sync] ERROR: Refusing to connect {src_name} -> {dst_name} (self-loop)")
+            else:
+                try:
+                    jack_client.connect(out_port, sl_dest)
+                    jack_midi_connections.append((out_port, sl_dest))
+                    print(f"[SL88 Sync] Connected {src_name} -> {dst_name}")
+
+                    status = 0xC0 | (COMMON_CHANNEL - 1)
+                    msg_bytes = bytes([status, active_piano])
+                    send_q.put(msg_bytes)
+                    print(
+                        f"[SL88 Sync] Queued ONE-SHOT Program Change: {active_piano}"
+                        f" on Ch{COMMON_CHANNEL} (Hex: {msg_bytes.hex()})"
+                    )
+                except Exception as e:
+                    print(f"[SL88 Sync] Failed: {e}")
+
+        print("Starting JACK MIDI listener for Program Changes...")
+        print(f"Listening on: {jack_client.name}:input")
+        connect_jack_midi_source(jack_client, TARGET_PORT, in_port, jack_midi_connections)
+
+        print(f"Listening for Control Changes on ch{CC_CHANNEL}...")
+        print(f"Listening on: {jack_client.name}:cc_input")
+        if cc_map:
+            for cc_num in sorted(cc_map):
+                m = cc_map[cc_num]
+                print(f"  CC {cc_num} -> {m.instance}:{m.param}")
+            takeover = "on" if CC_SOFT_TAKEOVER else "off"
+            print(f"  Soft takeover: {takeover} (threshold={CC_PICKUP_THRESHOLD})")
+            connect_jack_midi_source(
+                jack_client, CC_TARGET_PORT, cc_in_port, jack_midi_connections
+            )
+        else:
+            print("  (no plugin midi_cc mappings in pedalboard)")
+
+        print("Listening for MIDI events... (Ctrl+C to stop)")
+        print(f"Mapping: Program Change X -> Piano Instance X. Detected Pianos: {sorted(piano_ids)}")
+
+        last_prog = None
+        last_seen_midi: dict[int, int] = {}
+
+        if CC_SOFT_TAKEOVER and active_piano in cc_mapped_instances:
+            reset_ccs = reset_pickup_for_instance(
+                active_piano, cc_map, applied_params, cc_pickup
+            )
+            if reset_ccs:
+                print(
+                    f"[CC] Soft takeover armed for instance {active_piano}"
+                    f" (CCs {reset_ccs})"
+                )
+
         while not stop_event.is_set():
             try:
                 data = event_q.get(timeout=0.25)
@@ -916,40 +996,18 @@ def main() -> None:
 
     except KeyboardInterrupt:
         print("\nStopping...")
+    except Exception as e:
+        print(f"\nSession error: {e}")
+        raise
     finally:
-        print("\n== Cleaning Up Session ==")
-
-        try:
-            persist_state(force=True)
-        except Exception:
-            pass
-        
-        # 1. Disconnect ports
-        for src, dst in reversed(active_connections):
-            try:
-                # We use send_cmd directly to avoid our helper strict checks if desired,
-                # but standard cleanup is fine.
-                print(f"Disconnecting {src} -> {dst}")
-                send_cmd(f'disconnect "{src}" "{dst}"')
-            except Exception as e:
-                print(f"Failed to disconnect {src}->{dst}: {e}")
-                
-        # 2. Remove plugins
-        for inst in reversed(loaded_ids):
-            try:
-                print(f"Removing plugin {inst}")
-                send_cmd(f"remove {inst}")
-            except Exception as e:
-                print(f"Failed to remove plugin {inst}: {e}")
-
-        try:
-            client.deactivate()
-        except:
-            pass
-        try:
-            client.close()
-        except:
-             pass
+        cleanup_session(
+            loaded_ids=loaded_ids,
+            active_connections=active_connections,
+            jack_midi_connections=jack_midi_connections,
+            jack_client=jack_client,
+            jack_activated=jack_activated,
+            persist_state_fn=persist_state,
+        )
 
 
 if __name__ == "__main__":
