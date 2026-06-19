@@ -299,6 +299,21 @@
   }
 },
 
+ "29": {
+      "uri": "http://sfztools.github.io/sfizz",
+      "symbol": "sfizz-lutheal",
+      "bypass": true,
+      "gain": 13.5,
+      "x": 100,
+      "y": 200,
+      "state": {
+        "http://sfztools.github.io/sfizz:sfzfile": "/usr/share/sfz/pianos/lutheal/lutheal-cimbalom.sfz"
+      },
+      "controls": {
+        "volume": 0.0
+      }
+    },
+
      "35": {
       "uri": "http://calf.sourceforge.net/plugins/StereoTools",
       "symbol": "stereotools",
@@ -451,6 +466,8 @@
       "from": "system:midi_capture_1",
       "to": "28:midi"
     },
+   {                                                                                                                        "from": "system:midi_capture_1",                                                                                        "to": "29:control"
+    },   
     {  
       "from": "system:midi_capture_1",
       "to": "23:MIDI_IN"
@@ -610,6 +627,14 @@
     },
     {
       "from": "28:output_R",
+      "to": "35:in_r"
+    },
+    {
+      "from": "29:out_left",
+      "to": "35:in_l"
+    },
+    {
+      "from": "29:out_right",
       "to": "35:in_r"
     },
 
