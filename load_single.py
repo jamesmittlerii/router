@@ -70,6 +70,7 @@ _last_state_write_mono = 0.0
 
 stop_event = threading.Event()
 _shutdown_signal: Optional[int] = None
+_log_lock = threading.Lock()
 
 
 def request_stop(signum, frame):
@@ -85,15 +86,32 @@ signal.signal(signal.SIGINT, request_stop)   # Ctrl-C too
 
 
 def configure_stdio() -> None:
-    """Line-buffer stdout/stderr so journalctl gets one record per print()."""
+    """Line-buffer stdout/stderr so journald receives one record per line."""
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is None:
             continue
         try:
-            reconfigure(line_buffering=True)
+            reconfigure(line_buffering=True, write_through=True)
+        except TypeError:
+            try:
+                reconfigure(line_buffering=True)
+            except (OSError, ValueError):
+                pass
         except (OSError, ValueError):
             pass
+
+
+def log(msg: str) -> None:
+    """Write one line to stdout; one os.write() per call for live journalctl -f."""
+    with _log_lock:
+        try:
+            os.write(1, (msg + "\n").encode("utf-8", errors="replace"))
+        except OSError:
+            print(msg, flush=True)
+
+
+configure_stdio()
 
 
 # ---- Helper Functions ----
@@ -575,7 +593,7 @@ def disconnect_jack_midi_connections(
     for src, dst in reversed(jack_midi_connections):
         try:
             jack_client.disconnect(src, dst)
-            print(f"Disconnected JACK {src.name} -> {dst.name}", flush=True)
+            log(f"Disconnected JACK {src.name} -> {dst.name}")
         except jack.JackError as e:
             print(f"Failed to disconnect JACK {src.name}->{dst.name}: {e}")
 
@@ -618,7 +636,7 @@ def cleanup_session(
     jack_activated: bool,
     persist_state_fn: Optional[Callable[..., None]] = None,
 ) -> None:
-    print("== Cleaning Up Session ==", flush=True)
+    log("== Cleaning Up Session ==")
 
     if persist_state_fn is not None:
         try:
@@ -631,11 +649,11 @@ def cleanup_session(
         close_jack_client(jack_client, jack_activated)
 
     for src, dst in reversed(active_connections):
-        print(f"Disconnecting {src} -> {dst}", flush=True)
+        log(f"Disconnecting {src} -> {dst}")
         mod_disconnect_quiet(src, dst)
 
     for inst in reversed(loaded_ids):
-        print(f"Removing plugin {inst}", flush=True)
+        log(f"Removing plugin {inst}")
         mod_remove_quiet(inst)
 
 
@@ -710,8 +728,6 @@ def drain_cc_events(
 # ---- Main ----
 
 def main() -> None:
-    configure_stdio()
-
     if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} /path/to/pedalboard.json", file=sys.stderr)
         sys.exit(2)
@@ -1015,12 +1031,12 @@ def main() -> None:
                 print(f"   (Program {prog} is not a known piano instance, ignoring switch)")
 
         if _shutdown_signal is not None:
-            print(f"Received signal {_shutdown_signal}, stopping...", flush=True)
+            log(f"Received signal {_shutdown_signal}, stopping...")
 
     except KeyboardInterrupt:
-        print("Stopping...", flush=True)
+        log("Stopping...")
     except Exception as e:
-        print(f"Session error: {e}", flush=True)
+        log(f"Session error: {e}")
         raise
     finally:
         cleanup_session(
