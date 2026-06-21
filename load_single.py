@@ -857,21 +857,51 @@ def handle_fluida_preset_cc(
     *,
     active_piano: Optional[int],
     fluida_presets: dict[int, FluidaPresetConfig],
+    fluida_instance_ids: set[int],
     last_fluida_preset_cc: dict[int, int],
     send_preset: Callable[[int, int], None],
+    source: str = "input",
 ) -> bool:
     """Apply a COMMON_CHANNEL CC as a Fluida preset change. Returns True if handled."""
     if msg.type != "control_change":
         return False
-    if msg.channel != COMMON_CHANNEL - 1:
-        return False
     if msg.control != FLUIDA_PRESET_CC:
         return False
-    if active_piano is None or active_piano not in fluida_presets:
-        return False
+
+    ch = msg.channel + 1
+    print(
+        f"[Fluida CC] CC{FLUIDA_PRESET_CC} value={msg.value} on ch{ch}"
+        f" ({source})"
+    )
+
+    if msg.channel != COMMON_CHANNEL - 1:
+        print(f"[Fluida CC] Ignoring: expected ch{COMMON_CHANNEL}")
+        return True
+
+    if active_piano is None:
+        print("[Fluida CC] Ignoring: no active piano")
+        return True
+
+    if active_piano not in fluida_instance_ids:
+        print(
+            f"[Fluida CC] Ignoring: active instance {active_piano}"
+            " is not Fluida"
+        )
+        return True
+
+    if active_piano not in fluida_presets:
+        print(
+            f"[Fluida CC] Ignoring: Fluida instance {active_piano}"
+            " has no preset config in pedalboard"
+        )
+        return True
 
     preset = max(0, min(127, msg.value))
     if last_fluida_preset_cc.get(active_piano) == preset:
+        print(
+            f"[Fluida CC] Preset {preset} unchanged for instance"
+            f" {active_piano}, skipping"
+        )
         return True
 
     last_fluida_preset_cc[active_piano] = preset
@@ -881,6 +911,38 @@ def handle_fluida_preset_cc(
         f" -> instance {active_piano} preset={preset}"
     )
     return True
+
+
+def drain_fluida_preset_cc_events(
+    event_queue: "queue.Queue[bytes]",
+    *,
+    source: str,
+    active_piano: Optional[int],
+    fluida_presets: dict[int, FluidaPresetConfig],
+    fluida_instance_ids: set[int],
+    last_fluida_preset_cc: dict[int, int],
+    send_preset: Callable[[int, int], None],
+) -> None:
+    """Check a JACK MIDI queue for Fluida preset CC messages."""
+    while True:
+        try:
+            data = event_queue.get_nowait()
+        except queue.Empty:
+            break
+
+        msg = decode_mido(data)
+        if msg is None:
+            continue
+
+        handle_fluida_preset_cc(
+            msg,
+            active_piano=active_piano,
+            fluida_presets=fluida_presets,
+            fluida_instance_ids=fluida_instance_ids,
+            last_fluida_preset_cc=last_fluida_preset_cc,
+            send_preset=send_preset,
+            source=source,
+        )
 
 # ---- Main ----
 
@@ -915,6 +977,7 @@ def main() -> None:
     active_piano = None
     program_gains: dict[int, float] = {}
     fluida_presets: dict[int, FluidaPresetConfig] = {}
+    fluida_instance_ids: set[int] = set()
     output_gain_instance: Optional[int] = None
     output_gain_default = 0.0
 
@@ -993,6 +1056,7 @@ def main() -> None:
                 program_gains[inst] = get_plugin_gain(p, output_gain_default)
 
             if uri == FLUIDA_URI:
+                fluida_instance_ids.add(inst)
                 preset_cfg = parse_fluida_preset(p)
                 if preset_cfg is not None:
                     fluida_presets[inst] = preset_cfg
@@ -1142,7 +1206,7 @@ def main() -> None:
         if fluida_presets:
             print(
                 f"Listening for Fluida preset CC {FLUIDA_PRESET_CC}"
-                f" on ch{COMMON_CHANNEL} (same port as Program Changes)"
+                f" on ch{COMMON_CHANNEL} (input + cc_input ports)"
             )
 
         print("Listening for MIDI events... (Ctrl+C to stop)")
@@ -1151,6 +1215,10 @@ def main() -> None:
         last_prog = None
         last_seen_midi: dict[int, int] = {}
         last_fluida_preset_cc: dict[int, int] = {}
+
+        send_fluida_preset_from_cc = (
+            lambda inst, preset: maybe_send_fluida_preset(inst, preset)
+        )
 
         if CC_SOFT_TAKEOVER and active_piano in cc_mapped_instances:
             reset_ccs = reset_pickup_for_instance(
@@ -1169,10 +1237,28 @@ def main() -> None:
                 drain_cc_events(
                     last_seen_midi, cc_map, applied_params, cc_pickup, persist_state
                 )
+                drain_fluida_preset_cc_events(
+                    cc_event_q,
+                    source="cc_input",
+                    active_piano=active_piano,
+                    fluida_presets=fluida_presets,
+                    fluida_instance_ids=fluida_instance_ids,
+                    last_fluida_preset_cc=last_fluida_preset_cc,
+                    send_preset=send_fluida_preset_from_cc,
+                )
                 continue
 
             drain_cc_events(
                 last_seen_midi, cc_map, applied_params, cc_pickup, persist_state
+            )
+            drain_fluida_preset_cc_events(
+                cc_event_q,
+                source="cc_input",
+                active_piano=active_piano,
+                fluida_presets=fluida_presets,
+                fluida_instance_ids=fluida_instance_ids,
+                last_fluida_preset_cc=last_fluida_preset_cc,
+                send_preset=send_fluida_preset_from_cc,
             )
 
             msg = decode_mido(data)
@@ -1185,8 +1271,10 @@ def main() -> None:
                 msg,
                 active_piano=active_piano,
                 fluida_presets=fluida_presets,
+                fluida_instance_ids=fluida_instance_ids,
                 last_fluida_preset_cc=last_fluida_preset_cc,
-                send_preset=lambda inst, preset: maybe_send_fluida_preset(inst, preset),
+                send_preset=send_fluida_preset_from_cc,
+                source="input",
             ):
                 continue
 
