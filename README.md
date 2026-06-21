@@ -182,6 +182,15 @@ python3 modhost_cmd.py "bypass 42 0"      # enable reverb
 python3 modhost_cmd.py "param_set 43 Gain -3.0"
 ```
 
+### Launch Control XL3
+
+Plugins with an `lcxl` section in the pedalboard JSON get a custom-mode SysEx upload on program change (fader/encoder CC maps and labels). See **[docs/lcxl3-sysex.md](docs/lcxl3-sysex.md)** for the reverse-engineered format, common wrong assumptions, and test commands.
+
+```bash
+python test/lcxl3_setup_plugin.py 26 --listen 150   # Caveman (SFZ pass-through)
+python test/lcxl3_setup_plugin.py 28 --listen 150   # Connie (CC → LV2 params)
+```
+
 ### `test/` — development utilities
 
 Shell scripts (`jalv_chain*.sh`, `vanilla.sh`, `teardown.sh`) exercise individual LV2 chains with `jalv`. Python helpers send test Program Changes (`pc.py`, `pc2.py`), probe MIDI (`listen3.py`), or run earlier loader iterations (`load.py`).

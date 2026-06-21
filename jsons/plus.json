@@ -251,6 +251,51 @@
       },
       "controls": {
         "volume": 1.0
+      },
+      "midi_cc": {
+        "15": {"pass_through": true, "default": 100, "label": "Bass Osc Vol"},
+        "16": {"pass_through": true, "default": 15, "label": "Bass Osc Sel"},
+        "17": {"pass_through": true, "default": 0, "label": "Osc 1 Vol"},
+        "18": {"pass_through": true, "default": 108, "label": "Osc 1 Sel"},
+        "19": {"pass_through": true, "default": 127, "label": "Osc 2 Vol"},
+        "20": {"pass_through": true, "default": 25, "label": "Osc 2 Sel"},
+        "21": {"pass_through": true, "default": 52, "label": "Osc 3 Vol"},
+        "22": {"pass_through": true, "default": 35, "label": "Osc 3 Sel"},
+        "25": {"pass_through": true, "default": 0, "label": "Unison"},
+        "26": {"pass_through": true, "default": 63, "label": "Width"},
+        "27": {"pass_through": true, "default": 63, "label": "Detune"},
+        "28": {"pass_through": true, "default": 0, "label": "Extra detune amt"},
+        "29": {"pass_through": true, "default": 16, "label": "Extra detune time"},
+        "100": {"pass_through": true, "default": 0, "label": "Attack time"},
+        "101": {"pass_through": true, "default": 0, "label": "Hold time"},
+        "102": {"pass_through": true, "default": 63, "label": "Decay time"},
+        "103": {"pass_through": true, "default": 0, "label": "Sustain level"},
+        "104": {"pass_through": true, "default": 127, "label": "Release time"},
+        "106": {"pass_through": true, "default": 0, "label": "Env soften"},
+        "108": {"pass_through": true, "default": 0, "label": "Legato switch"},
+        "109": {"pass_through": true, "default": 31, "label": "Porta time"},
+        "111": {"pass_through": true, "default": 64, "label": "Vibrato to pitch"},
+        "112": {"pass_through": true, "default": 102, "label": "Vibrato speed"},
+        "113": {"pass_through": true, "default": 0, "label": "Vibrato to cutoff"},
+        "114": {"pass_through": true, "default": 0, "label": "Vibrato to volume"},
+        "115": {"pass_through": true, "default": 0, "label": "Vibrato delay"},
+        "116": {"pass_through": true, "default": 0, "label": "Vibrato fade"},
+        "117": {"pass_through": true, "default": 0, "label": "Unsteadiness"},
+        "120": {"pass_through": true, "default": 127, "label": "Filter cutoff"},
+        "121": {"pass_through": true, "default": 0, "label": "Resonance"},
+        "124": {"pass_through": true, "default": 0, "label": "Veltrack"},
+        "125": {"pass_through": true, "default": 0, "label": "Pluck"},
+        "126": {"pass_through": true, "default": 0, "label": "Filter attack"},
+        "127": {"pass_through": true, "default": 40, "label": "Filter decay"}
+      },
+      "lcxl": {
+        "fader": [15, 16, 17, 18, 19, 20, 21, 22],
+        "encoder": [
+          [25, 26, 27, 28, 29, 100, 101, 102],
+          [103, 104, 106, 108, 109, 111, 112, 113],
+          [114, 115, 116, 117, 120, 121, 124, 125]
+        ],
+        "button": [126, 127]
       }
     },
     "27": {
@@ -293,6 +338,9 @@
         "8": "db_iv",
         "9": "db_flute",
         "10": "db_reed"
+      },
+      "lcxl": {
+        "fader": [5, 6, 7, 8, 9, 10]
       }
     },
     "29": {

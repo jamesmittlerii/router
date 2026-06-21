@@ -34,6 +34,8 @@ from typing import Any, Callable, Optional
 import jack
 import mido
 
+from lcxl3 import build_custom_mode_messages, build_global_channel_midi_messages, parse_lcxl_layout
+
 # ---- Configuration ----
 
 MOD_HOST = os.environ.get("MOD_HOST", "127.0.0.1")
@@ -67,7 +69,7 @@ FILTER_CHANNEL = None  # Set to 0-15 to filter by channel, or None for all
 
 # Launch Control XL3 drawbar CC (1-based MIDI channel, matches controller display)
 CC_TARGET_PORT = os.environ.get("CC_TARGET_PORT", "system:midi_capture_5")
-CC_CHANNEL = int(os.environ.get("CC_CHANNEL", "3"))  # 1-16
+CC_CHANNEL = int(os.environ.get("CC_CHANNEL", str(COMMON_CHANNEL)))  # 1-16
 CC_SOFT_TAKEOVER = os.environ.get("CC_SOFT_TAKEOVER", "1").lower() not in (
     "0",
     "false",
@@ -76,6 +78,8 @@ CC_SOFT_TAKEOVER = os.environ.get("CC_SOFT_TAKEOVER", "1").lower() not in (
 )
 CC_PICKUP_THRESHOLD = max(0, min(127, int(os.environ.get("CC_PICKUP_THRESHOLD", "1"))))
 CC_STATE_SAVE_DEBOUNCE_S = float(os.environ.get("CC_STATE_SAVE_DEBOUNCE_S", "0.5"))
+LCXL_DAW_IN_PORT = os.environ.get("LCXL_DAW_IN_PORT", "")
+LCXL_CUSTOM_MODE_SLOT = int(os.environ.get("LCXL_CUSTOM_MODE_SLOT", "0"))
 
 _state_save_lock = threading.Lock()
 _last_state_write_mono = 0.0
@@ -300,6 +304,10 @@ def fluida_midi_in_port(instance: int) -> str:
     return expand_port(f"{instance}:MIDI_IN")
 
 
+def sfizz_control_port(instance: int) -> str:
+    return expand_port(f"{instance}:control")
+
+
 def expand_port(port: str) -> str:
     """
     Convert pedalboard shorthand "40:out_left" to mod-host "effect_40:out_left".
@@ -318,13 +326,24 @@ class CcParamMapping:
     param: str
     min_val: float = 0.0
     max_val: float = 1.0
+    pass_through: bool = False
+    default_midi: int = 0
 
 
-def parse_midi_cc_entry(raw: Any) -> tuple[str, float, float]:
+def parse_midi_cc_entry(raw: Any) -> tuple[str, float, float, bool, int]:
     """Parse a midi_cc map value (symbol string or {param, min, max} object)."""
     if isinstance(raw, str):
-        return raw, 0.0, 1.0
+        return raw, 0.0, 1.0, False, 0
     if isinstance(raw, dict):
+        if raw.get("pass_through"):
+            label = raw.get("label") or raw.get("param") or raw.get("symbol")
+            if not label:
+                raise ValueError("pass_through midi_cc entry needs 'label'")
+            try:
+                default_midi = int(raw.get("default", 0))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"invalid default in midi_cc entry: {raw}") from exc
+            return str(label), 0.0, 127.0, True, max(0, min(127, default_midi))
         param = raw.get("param") or raw.get("symbol")
         if not param:
             raise ValueError("midi_cc entry dict needs 'param' or 'symbol'")
@@ -333,7 +352,7 @@ def parse_midi_cc_entry(raw: Any) -> tuple[str, float, float]:
             max_val = float(raw.get("max", 1.0))
         except (TypeError, ValueError) as exc:
             raise ValueError(f"invalid min/max in midi_cc entry: {raw}") from exc
-        return str(param), min_val, max_val
+        return str(param), min_val, max_val, False, 0
     raise ValueError(f"unsupported midi_cc entry type: {type(raw).__name__}")
 
 
@@ -350,7 +369,9 @@ def build_cc_map(plugins: dict[str, Any]) -> dict[int, CcParamMapping]:
         for cc_key, entry in midi_cc.items():
             try:
                 cc_num = int(cc_key)
-                param, min_val, max_val = parse_midi_cc_entry(entry)
+                param, min_val, max_val, pass_through, default_midi = (
+                    parse_midi_cc_entry(entry)
+                )
             except (TypeError, ValueError) as exc:
                 print(f"Warning: skipping midi_cc {sid}[{cc_key!r}]: {exc}")
                 continue
@@ -360,7 +381,16 @@ def build_cc_map(plugins: dict[str, Any]) -> dict[int, CcParamMapping]:
                     f"Warning: CC {cc_num} remapped {prev.instance}:{prev.param}"
                     f" -> {inst}:{param}"
                 )
-            cc_map[cc_num] = CcParamMapping(inst, param, min_val, max_val)
+            if pass_through:
+                param = cc_param_key(cc_num)
+            cc_map[cc_num] = CcParamMapping(
+                inst,
+                param,
+                min_val,
+                max_val,
+                pass_through=pass_through,
+                default_midi=default_midi,
+            )
     return cc_map
 
 
@@ -392,16 +422,34 @@ def seed_applied_params(plugins: dict[str, Any]) -> dict[tuple[int, str], float]
     for sid, plugin in plugins.items():
         if not isinstance(plugin, dict):
             continue
-        controls = plugin.get("controls") or {}
-        if not isinstance(controls, dict):
-            continue
         inst = int(sid)
-        for symbol, val in controls.items():
+        controls = plugin.get("controls") or {}
+        if isinstance(controls, dict):
+            for symbol, val in controls.items():
+                try:
+                    applied[(inst, str(symbol))] = float(val)
+                except (TypeError, ValueError):
+                    continue
+        midi_cc = plugin.get("midi_cc")
+        if not isinstance(midi_cc, dict):
+            continue
+        for cc_key, entry in midi_cc.items():
             try:
-                applied[(inst, str(symbol))] = float(val)
+                _, _, _, pass_through, default_midi = parse_midi_cc_entry(entry)
             except (TypeError, ValueError):
                 continue
+            if not pass_through:
+                continue
+            try:
+                cc_num = int(cc_key)
+            except (TypeError, ValueError):
+                continue
+            applied[(inst, cc_param_key(cc_num))] = float(default_midi)
     return applied
+
+
+def cc_param_key(cc_num: int) -> str:
+    return f"cc_{cc_num}"
 
 
 def init_cc_pickup(
@@ -412,7 +460,7 @@ def init_cc_pickup(
     for cc, mapping in cc_map.items():
         param_val = applied_params.get(
             (mapping.instance, mapping.param),
-            mapping.min_val,
+            float(mapping.default_midi) if mapping.pass_through else mapping.min_val,
         )
         pickup[cc] = CcPickupState(
             armed=False,
@@ -434,7 +482,7 @@ def reset_pickup_for_instance(
             continue
         param_val = applied_params.get(
             (mapping.instance, mapping.param),
-            mapping.min_val,
+            float(mapping.default_midi) if mapping.pass_through else mapping.min_val,
         )
         cc_pickup[cc] = CcPickupState(
             armed=False,
@@ -593,6 +641,8 @@ event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)  # Program Change (SL8
 cc_event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)  # Control Change (LCXL3)
 send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=128)   # Outgoing (SL88 sync)
 fluida_send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=128)  # Outgoing (Fluida preset)
+lcxl_send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=64)  # Outgoing (LCXL3 SysEx)
+cc_forward_q: "queue.Queue[bytes]" = queue.Queue(maxsize=256)  # Outgoing (SFZ CC pass-through)
 
 
 def _enqueue_incoming_midi(
@@ -625,25 +675,47 @@ def _jack_process(
     cc_inp: jack.Port,
     outp: jack.Port,
     preset_outp: jack.Port,
+    lcxl_outp: jack.Port,
+    cc_forward_outp: jack.Port,
 ) -> None:
     _enqueue_incoming_midi(inp, event_q)
     _enqueue_incoming_midi(cc_inp, cc_event_q)
     _flush_outgoing_midi(outp, send_q)
     _flush_outgoing_midi(preset_outp, fluida_send_q)
+    _flush_outgoing_midi(lcxl_outp, lcxl_send_q)
+    _flush_outgoing_midi(cc_forward_outp, cc_forward_q)
 
 
-def _open_jack_client_once() -> tuple[jack.Client, jack.Port, jack.Port, jack.Port, jack.Port]:
+def _open_jack_client_once() -> tuple[
+    jack.Client,
+    jack.Port,
+    jack.Port,
+    jack.Port,
+    jack.Port,
+    jack.Port,
+    jack.Port,
+]:
     c = jack.Client(JACK_CLIENT_NAME, no_start_server=True)
     inp = c.midi_inports.register("input")
     cc_inp = c.midi_inports.register("cc_input")
     outp = c.midi_outports.register("output")
     preset_outp = c.midi_outports.register("preset_out")
+    lcxl_outp = c.midi_outports.register("lcxl_out")
+    cc_forward_outp = c.midi_outports.register("cc_forward_out")
 
     @c.set_process_callback
     def process(frames):
-        _jack_process(frames, inp, cc_inp, outp, preset_outp)
+        _jack_process(
+            frames,
+            inp,
+            cc_inp,
+            outp,
+            preset_outp,
+            lcxl_outp,
+            cc_forward_outp,
+        )
 
-    return c, inp, cc_inp, outp, preset_outp
+    return c, inp, cc_inp, outp, preset_outp, lcxl_outp, cc_forward_outp
 
 
 def _log_jack_open_retry(attempt: int, exc: Exception) -> None:
@@ -654,7 +726,15 @@ def _log_jack_open_retry(attempt: int, exc: Exception) -> None:
     time.sleep(JACK_OPEN_RETRY_DELAY_S)
 
 
-def create_jack_client() -> tuple[jack.Client, jack.Port, jack.Port, jack.Port, jack.Port]:
+def create_jack_client() -> tuple[
+    jack.Client,
+    jack.Port,
+    jack.Port,
+    jack.Port,
+    jack.Port,
+    jack.Port,
+    jack.Port,
+]:
     """Open the router JACK MIDI client (retries if a stale client name lingers)."""
     last_err: Optional[Exception] = None
     for attempt in range(1, JACK_OPEN_RETRIES + 1):
@@ -739,6 +819,178 @@ def connect_jack_midi_source(
             print(f"  jack_connect {port_name} {dest_port.name}")
     except jack.JackError as e:
         print(f"Connection error ({port_name}): {e}")
+
+
+def find_midi_port_by_alias(
+    jack_client: jack.Client, needle: str
+) -> Optional[jack.Port]:
+    needle_lower = needle.lower()
+    for entry in jack_client.get_ports():
+        port = (
+            jack_client.get_port_by_name(entry)
+            if isinstance(entry, str)
+            else entry
+        )
+        if port is None:
+            continue
+        for alias in port.aliases:
+            if needle_lower in alias.lower():
+                return port
+    return None
+
+
+def resolve_lcxl_daw_in_port(jack_client: jack.Client) -> Optional[jack.Port]:
+    if LCXL_DAW_IN_PORT:
+        return jack_client.get_port_by_name(LCXL_DAW_IN_PORT)
+    return find_midi_port_by_alias(jack_client, "DAW-In")
+
+
+def connect_lcxl_daw_in(
+    jack_client: jack.Client,
+    lcxl_out: jack.Port,
+    jack_midi_connections: list[tuple[jack.Port, jack.Port]],
+) -> None:
+    dest = resolve_lcxl_daw_in_port(jack_client)
+    if dest is None:
+        print(
+            "[LCXL3] Warning: DAW-In port not found;"
+            " set LCXL_DAW_IN_PORT or connect lcxl_out manually"
+        )
+        return
+    try:
+        jack_client.connect(lcxl_out, dest)
+        jack_midi_connections.append((lcxl_out, dest))
+        print(f"[LCXL3] Connected {lcxl_out.name} -> {dest.name}")
+    except jack.JackError as e:
+        print(f"[LCXL3] Failed to connect {lcxl_out.name} -> {dest.name}: {e}")
+
+
+def queue_lcxl_sysex(payload: bytes, label: str) -> None:
+    lcxl_send_q.put(payload)
+    print(f"[LCXL3] Queued {label} ({len(payload)} bytes)")
+
+
+def connect_cc_forward_target(
+    jack_client: jack.Client,
+    cc_forward_out: jack.Port,
+    instance: int,
+    jack_midi_connections: list[tuple[jack.Port, jack.Port]],
+) -> None:
+    dest_name = sfizz_control_port(instance)
+    dest = jack_client.get_port_by_name(dest_name)
+    if dest is None:
+        print(f"[SFZ CC] Warning: port '{dest_name}' not found; CC not forwarded")
+        return
+
+    for src, dst in reversed(jack_midi_connections):
+        if src is cc_forward_out:
+            try:
+                jack_client.disconnect(src, dst)
+                jack_midi_connections.remove((src, dst))
+            except jack.JackError as e:
+                print(
+                    f"[SFZ CC] Failed to disconnect {src.name}->{dst.name}: {e}"
+                )
+
+    try:
+        jack_client.connect(cc_forward_out, dest)
+        jack_midi_connections.append((cc_forward_out, dest))
+        print(f"[SFZ CC] Connected {cc_forward_out.name} -> {dest_name}")
+    except jack.JackError as e:
+        print(f"[SFZ CC] Failed to connect {cc_forward_out.name} -> {dest_name}: {e}")
+
+
+def queue_cc_forward(
+    cc_num: int,
+    midi_val: int,
+    *,
+    channel: int = COMMON_CHANNEL,
+) -> None:
+    status = 0xB0 | (channel - 1)
+    cc_forward_q.put(bytes([status, cc_num & 0x7F, midi_val & 0x7F]))
+
+
+def send_initial_sfz_cc_values(
+    instance: int,
+    plugin: dict[str, Any],
+    applied_params: dict[tuple[int, str], float],
+) -> None:
+    midi_cc = plugin.get("midi_cc")
+    if not isinstance(midi_cc, dict):
+        return
+    for cc_key, entry in midi_cc.items():
+        try:
+            cc_num = int(cc_key)
+            _, _, _, pass_through, default_midi = parse_midi_cc_entry(entry)
+        except (TypeError, ValueError):
+            continue
+        if not pass_through:
+            continue
+        saved = applied_params.get((instance, cc_param_key(cc_num)))
+        midi_val = int(saved) if saved is not None else default_midi
+        midi_val = max(0, min(127, midi_val))
+        queue_cc_forward(cc_num, midi_val)
+        print(
+            f"[SFZ CC] Queued initial CC {cc_num}={midi_val} -> instance {instance}"
+        )
+
+
+def configure_lcxl_for_plugin(
+    session: "RouterSession",
+    instance: int,
+) -> None:
+    if session.jack_client is None or session.lcxl_out_port is None:
+        return
+
+    plugin = session.plugins.get(str(instance))
+    if not isinstance(plugin, dict):
+        return
+
+    layout = parse_lcxl_layout(plugin.get("lcxl"))
+    if layout is None:
+        return
+
+    symbol = plugin.get("symbol") or str(instance)
+    name = str(symbol)[:14]
+    labels: dict[int, str] = {}
+    midi_cc = plugin.get("midi_cc")
+    if isinstance(midi_cc, dict):
+        for cc_key, entry in midi_cc.items():
+            try:
+                cc_num = int(cc_key)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(entry, dict):
+                label = entry.get("label") or entry.get("param") or entry.get("symbol")
+                if label:
+                    labels[cc_num] = str(label)
+            elif isinstance(entry, str):
+                labels[cc_num] = entry
+    flat_encoders = [cc for row in layout["encoders"] for cc in row]
+    messages = build_custom_mode_messages(
+        name,
+        faders=layout["faders"],
+        encoders=flat_encoders,
+        buttons=layout.get("buttons") or [],
+        channel=COMMON_CHANNEL,
+        slot=LCXL_CUSTOM_MODE_SLOT,
+        labels=labels,
+    )
+    for page_idx, sysex in enumerate(messages):
+        queue_lcxl_sysex(sysex, f"custom mode page {page_idx} for {symbol}")
+    for idx, msg in enumerate(build_global_channel_midi_messages(COMMON_CHANNEL)):
+        queue_lcxl_sysex(msg, f"LCXL3 global MIDI channel {COMMON_CHANNEL} ({idx + 1})")
+
+    uri = plugin.get("uri")
+    if uri == "http://sfztools.github.io/sfizz":
+        if session.cc_forward_out_port is not None:
+            connect_cc_forward_target(
+                session.jack_client,
+                session.cc_forward_out_port,
+                instance,
+                session.jack_midi_connections,
+            )
+        send_initial_sfz_cc_values(instance, plugin, session.applied_params)
 
 
 def disconnect_jack_midi_connections(
@@ -863,6 +1115,18 @@ def _apply_cc_to_plugin(
     applied_params: dict[tuple[int, str], float],
     persist_state: Optional[Callable[..., None]] = None,
 ) -> None:
+    if mapping.pass_through:
+        queue_cc_forward(control, midi_val)
+        applied_params[(mapping.instance, mapping.param)] = float(midi_val)
+        state.target_midi = midi_val
+        print(
+            f"🎚️  CC ch{CC_CHANNEL} cc={control}"
+            f" -> sfizz {mapping.instance} CC {control}={midi_val}"
+        )
+        if persist_state is not None:
+            persist_state()
+        return
+
     param_val = midi_cc_to_param(midi_val, mapping)
     try:
         mod_param_set(mapping.instance, mapping.param, param_val)
@@ -892,6 +1156,7 @@ def _process_cc_event(
     last_seen_midi: dict[int, int],
     cc_pickup: dict[int, CcPickupState],
     applied_params: dict[tuple[int, str], float],
+    active_piano: Optional[int],
     persist_state: Optional[Callable[..., None]] = None,
 ) -> None:
     if not _is_cc_channel_control_change(msg, cc_mido_channel):
@@ -899,6 +1164,8 @@ def _process_cc_event(
 
     mapping = cc_map.get(msg.control)
     if mapping is None:
+        return
+    if active_piano is not None and mapping.instance != active_piano:
         return
     if last_seen_midi.get(msg.control) == msg.value:
         return
@@ -924,6 +1191,7 @@ def drain_cc_events(
     cc_map: dict[int, CcParamMapping],
     applied_params: dict[tuple[int, str], float],
     cc_pickup: dict[int, CcPickupState],
+    active_piano: Optional[int],
     persist_state: Optional[Callable[..., None]] = None,
 ) -> None:
     """Apply control changes on CC_CHANNEL via mod-host param_set."""
@@ -942,6 +1210,7 @@ def drain_cc_events(
             last_seen_midi=last_seen_midi,
             cc_pickup=cc_pickup,
             applied_params=applied_params,
+            active_piano=active_piano,
             persist_state=persist_state,
         )
 
@@ -1067,6 +1336,8 @@ class RouterSession:
     cc_in_port: Optional[jack.Port] = None
     out_port: Optional[jack.Port] = None
     preset_out_port: Optional[jack.Port] = None
+    lcxl_out_port: Optional[jack.Port] = None
+    cc_forward_out_port: Optional[jack.Port] = None
 
 
 @dataclass
@@ -1378,7 +1649,8 @@ def setup_midi_input_listeners(session: RouterSession) -> None:
     if session.cc_map:
         for cc_num in sorted(session.cc_map):
             m = session.cc_map[cc_num]
-            print(f"  CC {cc_num} -> {m.instance}:{m.param}")
+            kind = "pass-through" if m.pass_through else "param"
+            print(f"  CC {cc_num} -> {m.instance}:{m.param} ({kind})")
         takeover = "on" if CC_SOFT_TAKEOVER else "off"
         print(f"  Soft takeover: {takeover} (threshold={CC_PICKUP_THRESHOLD})")
         connect_jack_midi_source(
@@ -1389,6 +1661,16 @@ def setup_midi_input_listeners(session: RouterSession) -> None:
         )
     else:
         print("  (no plugin midi_cc mappings in pedalboard)")
+
+    if session.lcxl_out_port is not None:
+        connect_lcxl_daw_in(
+            session.jack_client,
+            session.lcxl_out_port,
+            session.jack_midi_connections,
+        )
+
+    if session.active_piano is not None:
+        configure_lcxl_for_plugin(session, session.active_piano)
 
     if session.fluida_presets:
         print(
@@ -1435,6 +1717,7 @@ def _drain_aux_midi_queues(
         session.cc_map,
         session.applied_params,
         cc_pickup,
+        session.active_piano,
         persist_state_fn,
     )
     drain_fluida_preset_cc_events(
@@ -1502,6 +1785,7 @@ def switch_active_piano(
     _apply_output_gain_for_piano(session, prog)
     session.active_piano = prog
     maybe_send_fluida_preset(session, prog)
+    configure_lcxl_for_plugin(session, prog)
     try:
         persist_state_fn(force=True)
         print(f"   [State] Saved active piano {prog} to {STATE_FILE}")
@@ -1613,6 +1897,8 @@ def run_loader_session(
         session.cc_in_port,
         session.out_port,
         session.preset_out_port,
+        session.lcxl_out_port,
+        session.cc_forward_out_port,
     ) = create_jack_client()
     print(f"Opened JACK client: {session.jack_client.name}")
 
