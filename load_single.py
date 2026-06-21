@@ -68,7 +68,7 @@ TARGET_PORT = "system:midi_capture_1"
 FILTER_CHANNEL = None  # Set to 0-15 to filter by channel, or None for all
 
 # Launch Control XL3 drawbar CC (1-based MIDI channel, matches controller display)
-CC_TARGET_PORT = os.environ.get("CC_TARGET_PORT", "system:midi_capture_5")
+CC_TARGET_PORT = os.environ.get("CC_TARGET_PORT", "system:midi_capture_4")
 CC_CHANNEL = int(os.environ.get("CC_CHANNEL", str(COMMON_CHANNEL)))  # 1-16
 CC_SOFT_TAKEOVER = os.environ.get("CC_SOFT_TAKEOVER", "1").lower() not in (
     "0",
