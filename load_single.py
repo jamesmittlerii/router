@@ -42,6 +42,7 @@ TIMEOUT_S = float(os.environ.get("MOD_TIMEOUT", "5.0"))
 COMMON_CHANNEL = 2  # User confirmed Channel 2
 FLUIDA_URI = "https://github.com/brummer10/Fluida.lv2"
 FLUIDA_PRESET_CHANNEL = int(os.environ.get("FLUIDA_PRESET_CHANNEL", "1"))  # 1-16, note channel
+FLUIDA_PRESET_CC = int(os.environ.get("FLUIDA_PRESET_CC", "80"))  # CC on COMMON_CHANNEL -> preset
 KILL_PC = 50 # set this to a PC to force a shutdown
 OUTPUT_GAIN_URI = "http://moddevices.com/plugins/mod-devel/Gain2x2"
 OUTPUT_GAIN_PARAM = "Gain"
@@ -830,6 +831,37 @@ def drain_cc_events(
         if persist_state is not None:
             persist_state()
 
+
+def handle_fluida_preset_cc(
+    msg,
+    *,
+    active_piano: Optional[int],
+    fluida_presets: dict[int, FluidaPresetConfig],
+    last_fluida_preset_cc: dict[int, int],
+    send_preset: Callable[[int, int], None],
+) -> bool:
+    """Apply a COMMON_CHANNEL CC as a Fluida preset change. Returns True if handled."""
+    if msg.type != "control_change":
+        return False
+    if msg.channel != COMMON_CHANNEL - 1:
+        return False
+    if msg.control != FLUIDA_PRESET_CC:
+        return False
+    if active_piano is None or active_piano not in fluida_presets:
+        return False
+
+    preset = max(0, min(127, msg.value))
+    if last_fluida_preset_cc.get(active_piano) == preset:
+        return True
+
+    last_fluida_preset_cc[active_piano] = preset
+    send_preset(active_piano, preset)
+    print(
+        f"🎹 FLUIDA PRESET CC ch{COMMON_CHANNEL} cc={FLUIDA_PRESET_CC}"
+        f" -> instance {active_piano} preset={preset}"
+    )
+    return True
+
 # ---- Main ----
 
 def main() -> None:
@@ -876,11 +908,11 @@ def main() -> None:
     out_port: Optional[jack.Port] = None
     preset_out_port: Optional[jack.Port] = None
 
-    def maybe_send_fluida_preset(instance: int) -> None:
+    def maybe_send_fluida_preset(instance: int, preset: Optional[int] = None) -> None:
         if jack_client is None or preset_out_port is None:
             return
-        config = fluida_presets.get(instance)
-        if config is None:
+        base = fluida_presets.get(instance)
+        if base is None:
             for src, dst in reversed(jack_midi_connections):
                 if src is preset_out_port:
                     try:
@@ -889,6 +921,11 @@ def main() -> None:
                     except jack.JackError:
                         pass
             return
+        config = FluidaPresetConfig(
+            preset=base.preset if preset is None else preset,
+            bank_msb=base.bank_msb,
+            bank_lsb=base.bank_lsb,
+        )
         send_fluida_preset(
             jack_client,
             preset_out_port,
@@ -1072,11 +1109,18 @@ def main() -> None:
         else:
             print("  (no plugin midi_cc mappings in pedalboard)")
 
+        if fluida_presets:
+            print(
+                f"Listening for Fluida preset CC {FLUIDA_PRESET_CC}"
+                f" on ch{COMMON_CHANNEL} (same port as Program Changes)"
+            )
+
         print("Listening for MIDI events... (Ctrl+C to stop)")
         print(f"Mapping: Program Change X -> Piano Instance X. Detected Pianos: {sorted(piano_ids)}")
 
         last_prog = None
         last_seen_midi: dict[int, int] = {}
+        last_fluida_preset_cc: dict[int, int] = {}
 
         if CC_SOFT_TAKEOVER and active_piano in cc_mapped_instances:
             reset_ccs = reset_pickup_for_instance(
@@ -1103,6 +1147,15 @@ def main() -> None:
 
             msg = decode_mido(data)
             if msg is None:
+                continue
+
+            if handle_fluida_preset_cc(
+                msg,
+                active_piano=active_piano,
+                fluida_presets=fluida_presets,
+                last_fluida_preset_cc=last_fluida_preset_cc,
+                send_preset=lambda inst, preset: maybe_send_fluida_preset(inst, preset),
+            ):
                 continue
 
             if msg.type != "program_change":
