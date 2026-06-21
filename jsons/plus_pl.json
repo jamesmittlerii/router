@@ -9,105 +9,97 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-k18",
       "bypass": true,
-      "gain": 18.0,
       "x": 100,
       "y": 200,
       "state": {
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/pianos/K18-Upright-Piano/K18-Upright-Piano.sfz"
       },
       "controls": {
-        "volume": 0.0
+        "volume": -10.0
       }
     },
     "11": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-salamander",
       "bypass": true,
-      "gain": 13.5,
       "x": 100,
       "y": 200,
       "state": {
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/pianos/SalamanderGrandPiano/Salamander Grand Piano V3.sfz"
       },
       "controls": {
-        "volume": 0.0
+        "volume": -10.0
       }
     },
     "12": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-cp80",
       "bypass": true,
-      "gain": 5.0,
       "x": 100,
       "y": 200,
       "state": {
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/CP80/CP80.sfz"
       },
       "controls": {
-        "volume": 0.0
+        "volume": -10.0
       }
     },
     "13": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-pianet",
       "bypass": true,
-      "gain": 6.5,
       "x": 100,
       "y": 200,
       "state": {
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Pianet T/Pianet T.sfz"
       },
       "controls": {
-        "volume": 0.0
+        "volume": -10.0
       }
     },
     "14": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-wurlitzer",
       "bypass": true,
-      "gain": 7.0,
       "x": 100,
       "y": 200,
       "state": {
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Wurlitzer/Wurlitzer.sfz"
       },
       "controls": {
-        "volume": 0.0
+        "volume": -10.0
       }
     },
     "15": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-ep200",
       "bypass": true,
-      "gain": 6.0,
       "x": 100,
       "y": 200,
       "state": {
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/Wurlitzer EP200/Wurlitzer EP200.sfz"
       },
       "controls": {
-        "volume": 0.0
+        "volume": -10.0
       }
     },
     "16": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-rhodes",
       "bypass": false,
-      "gain": -0.5,
       "x": 100,
       "y": 200,
       "state": {
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/JRhodes3d-st-no-xfade/jRhodes3d-st-no-xfade.sfz"
       },
       "controls": {
-        "volume": 0.0
+        "volume": -10.0
       }
     },
        "17": {
       "uri": "http://sfztools.github.io/sfizz",
-      "symbol": "sfz-electricv-le",
+      "symbol": "sf2-electricv-le",
       "bypass": true,
-      "gain": 10.5,
       "x": 100,
       "y": 200,
       "state": {
@@ -118,7 +110,6 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-clav",
       "bypass": true,
-      "gain": 20.0,
       "x": 100,
       "y": 200,
       "state": {
@@ -129,7 +120,6 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-ivy-ambient",
       "bypass": true,
-      "gain": 20.0,
       "x": 100,
       "y": 200,
       "state": {
@@ -143,7 +133,6 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-ivy-close",
       "bypass": true,
-      "gain": 19.5,
       "x": 100,
       "y": 200,
       "state": {
@@ -157,160 +146,26 @@
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-spanish-guitar",
       "bypass": true,
-      "gain": 6.5,
       "x": 100,
       "y": 200,
       "state": {
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/guitars/SpanishClassicalGuitar-SFZ+FLAC-20190618/SpanishClassicalGuitar-20190618.sfz"
       },
       "controls": {
-        "volume": 0.0
+        "volume": 6.0
       }
     },
     "22": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-button-accordion",
       "bypass": true,
-      "gain": 1.5,
       "x": 100,
       "y": 200,
       "state": {
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/accordions/Button Accordion HN SFZ+FLAC-20240329/PRESET Button Accordion HN tuned.sfz"
       },
       "controls": {
-        "volume": 0.0
-      }
-    },
-       "23": {
-      "uri": "https://github.com/brummer10/Fluida.lv2",
-      "symbol": "sf2-westcoast-guitar",
-      "bypass": true,
-      "gain": 20.0,
-      "x": 100,
-      "y": 200, 
-      "state": {
-        "https://github.com/brummer10/Fluida.lv2#soundfont": "/usr/local/share/sf2/guitars/West Coast Guitar/West_Coast_Guitar.sf2"
-      }
-    },  
-    "24": {
-      "uri": "http://sfztools.github.io/sfizz",
-      "symbol": "sfizz-mdm-guitar",
-      "bypass": true,
-      "gain": 10.0,
-      "x": 100,
-      "y": 200,
-      "state": {
-        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/guitars/MDM Classical Guitar v1.0/MDM Classical Guitar v1.0.sfz"
-      },
-      "controls": {
-        "volume": 0.0
-      }
-    },
-"25": {
-  "uri": "http://studionumbersix.com/foo/lv2/yc20",
-  "symbol": "foo-yc20",
-  "bypass": true,
-  "gain": 20.0,
-  "x": 300,
-  "y": 200,
-  "controls": {
-    "volume": 1.0,
-    "bass_volume": 0.0,
-    "realism": 0.0,
-    "depth": 0.08,
-    "speed": 0.22,
-    "balance": 0.65,
-    "bright": 0.8,
-    "b_16": 0.0,
-    "b_8": 0.0,
-    "bass_manual": 0.0,
-    "i_16": 0.2,
-    "i_8": 1.0,
-    "i_4": 0.85,
-    "i_2_2p3": 0.3,
-    "i_2": 0.55,
-    "i_1_3p5": 0.15,
-    "i_1": 0.1,
-    "ii_16": 0.1,
-    "ii_8": 0.75,
-    "ii_4": 0.55,
-    "ii_2": 0.25,
-    "percussive": 0.2,
-    "pitch": 0.0
-  }
-},
-
-"26": {
-      "uri": "http://sfztools.github.io/sfizz",
-      "symbol": "sfizz-caveman",
-      "bypass": true,
-      "gain": 20.0,
-      "x": 100,
-      "y": 200,
-      "state": {
-        "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/organs/Caveman_Cosmonaut/Programs/main.sfz"
-      },
-      "controls": {
-        "volume": 1.0
-      }
-    },
-
-"27": {
-  "uri": "http://bristol.sourceforge.net/lv2/vox",
-  "symbol": "bristol-vox",
-  "bypass": true,
-  "gain": 3.5,
-  "x": 300,
-  "y": 20,
-"controls": {
-      "gain": 0.25
-     }
-},
-
-"28": {
-  "uri": "https://ho-ro.net/connie/lv2",
-  "symbol": "horo-connie",
-  "bypass": true,
-  "gain": 7.0,
-  "x": 300,
-  "y": 20,
-  "controls": {
-    "db_16": 0.75,
-    "db_8": 1.0,
-    "db_4": 0.75,
-    "db_iv": 1.0,
-    "db_flute": 1.0,
-    "db_reed": 0.5,
-    "db_sharp": 0.0,
-    "db_perc": 0.0,
-    "db_vibrato": 0.0,
-    "db_reverb": 0.5,
-    "master": 0.25,
-    "transpose": 0.5,
-    "preset": 0.0
-  },
-  "midi_cc": {
-    "5": "db_16",
-    "6": "db_8",
-    "7": "db_4",
-    "8": "db_iv",
-    "9": "db_flute",
-    "10": "db_reed"
-  }
-},
-
- "29": {
-      "uri": "http://sfztools.github.io/sfizz",
-      "symbol": "sfizz-lutheal",
-      "bypass": true,
-      "gain": 20.0,
-      "x": 100,
-      "y": 200,
-      "state": {
-        "http://sfztools.github.io/sfizz:sfzfile": "/usr/share/sfz/pianos/lutheal/lutheal-cimbalom.sfz"
-      },
-      "controls": {
-        "volume": 0.0
+        "volume": 6.0
       }
     },
 
@@ -385,7 +240,7 @@
       "x": 850,
       "y": 200,
       "controls": {
-        "Gain": 6.0
+        "Gain": 0.0
       }
     },
     "44": {
@@ -450,49 +305,6 @@
       "from": "system:midi_capture_1",
       "to": "22:control"
     },
-     {
-      "from": "system:midi_capture_1",
-      "to": "24:control"
-    },
-  {
-      "from": "system:midi_capture_1",
-      "to": "26:control"
-    },
-  {
-      "from": "system:midi_capture_1",
-      "to": "27:midi_in"
-    },
-  {
-      "from": "system:midi_capture_1",
-      "to": "28:midi"
-    },
-   {                                                                                                                        "from": "system:midi_capture_1",                                                                                        "to": "29:control"
-    },   
-    {  
-      "from": "system:midi_capture_1",
-      "to": "23:MIDI_IN"
-    },
-    {
-         "from": "23:out",
-         "to": "35:in_l"
-       },
-        {
-         "from": "23:out1",
-         "to": "35:in_r"
-       },  
-
-     {
-   "from": "system:midi_capture_1",
-   "to": "25:midi"
-    },
-  {
-    "from": "25:output_L",
-     "to": "35:in_l"
-   },
-   {                                                                                                                      
-  "from": "25:output_R",            
-   "to": "35:in_r"
-   },
     {
       "from": "10:out_left",
       "to": "35:in_l"
@@ -597,47 +409,6 @@
       "from": "22:out_right",
       "to": "35:in_r"
     },
-     {
-      "from": "24:out_left",
-      "to": "35:in_l"
-    },
-    {
-      "from": "24:out_right",
-      "to": "35:in_r"
-    },
- {
-      "from": "26:out_left",
-      "to": "35:in_l"
-    },
-    {
-      "from": "26:out_right",
-      "to": "35:in_r"
-    },
- {
-      "from": "27:audio_l",
-      "to": "35:in_l"
-    },
-    {
-      "from": "27:audio_r",
-      "to": "35:in_r"
-    },
- {
-      "from": "28:output_L",
-      "to": "35:in_l"
-    },
-    {
-      "from": "28:output_R",
-      "to": "35:in_r"
-    },
-    {
-      "from": "29:out_left",
-      "to": "35:in_l"
-    },
-    {
-      "from": "29:out_right",
-      "to": "35:in_r"
-    },
-
     {
       "from": "35:out_l",
       "to": "50:in"
