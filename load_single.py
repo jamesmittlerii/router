@@ -27,7 +27,7 @@ import queue
 import threading
 import subprocess
 import signal
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -41,6 +41,16 @@ MOD_PORT = int(os.environ.get("MOD_PORT", "5555"))
 TIMEOUT_S = float(os.environ.get("MOD_TIMEOUT", "5.0"))
 COMMON_CHANNEL = 2  # User confirmed Channel 2
 FLUIDA_URI = "https://github.com/brummer10/Fluida.lv2"
+PIANO_PLUGIN_URIS = frozenset(
+    {
+        "http://sfztools.github.io/sfizz",
+        FLUIDA_URI,
+        "http://studionumbersix.com/foo/lv2/yc20",
+        "http://bristol.sourceforge.net/lv2/vox",
+        "https://ho-ro.net/connie/lv2",
+    }
+)
+SL88_TARGET_PORT = "system:midi_playback_1"
 FLUIDA_PRESET_CHANNEL = int(os.environ.get("FLUIDA_PRESET_CHANNEL", "1"))  # 1-16, note channel
 FLUIDA_PRESET_CC = int(os.environ.get("FLUIDA_PRESET_CC", "80"))  # CC on COMMON_CHANNEL -> preset
 KILL_PC = 50 # set this to a PC to force a shutdown
@@ -585,56 +595,75 @@ send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=128)   # Outgoing (SL88 sync)
 fluida_send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=128)  # Outgoing (Fluida preset)
 
 
+def _enqueue_incoming_midi(
+    port: jack.Port,
+    target: "queue.Queue[bytes]",
+) -> None:
+    for _offset, data in port.incoming_midi_events():
+        try:
+            target.put_nowait(bytes(data))
+        except queue.Full:
+            pass
+
+
+def _flush_outgoing_midi(
+    out_port: jack.Port,
+    source: "queue.Queue[bytes]",
+) -> None:
+    out_port.clear_buffer()
+    while True:
+        try:
+            msg = source.get_nowait()
+            out_port.write_midi_event(0, msg)
+        except queue.Empty:
+            break
+
+
+def _jack_process(
+    _frames: int,
+    inp: jack.Port,
+    cc_inp: jack.Port,
+    outp: jack.Port,
+    preset_outp: jack.Port,
+) -> None:
+    _enqueue_incoming_midi(inp, event_q)
+    _enqueue_incoming_midi(cc_inp, cc_event_q)
+    _flush_outgoing_midi(outp, send_q)
+    _flush_outgoing_midi(preset_outp, fluida_send_q)
+
+
+def _open_jack_client_once() -> tuple[jack.Client, jack.Port, jack.Port, jack.Port, jack.Port]:
+    c = jack.Client(JACK_CLIENT_NAME, no_start_server=True)
+    inp = c.midi_inports.register("input")
+    cc_inp = c.midi_inports.register("cc_input")
+    outp = c.midi_outports.register("output")
+    preset_outp = c.midi_outports.register("preset_out")
+
+    @c.set_process_callback
+    def process(frames):
+        _jack_process(frames, inp, cc_inp, outp, preset_outp)
+
+    return c, inp, cc_inp, outp, preset_outp
+
+
+def _log_jack_open_retry(attempt: int, exc: Exception) -> None:
+    print(
+        f"JACK client '{JACK_CLIENT_NAME}' unavailable"
+        f" (attempt {attempt}/{JACK_OPEN_RETRIES}): {exc}"
+    )
+    time.sleep(JACK_OPEN_RETRY_DELAY_S)
+
+
 def create_jack_client() -> tuple[jack.Client, jack.Port, jack.Port, jack.Port, jack.Port]:
     """Open the router JACK MIDI client (retries if a stale client name lingers)."""
     last_err: Optional[Exception] = None
     for attempt in range(1, JACK_OPEN_RETRIES + 1):
         try:
-            c = jack.Client(JACK_CLIENT_NAME, no_start_server=True)
-            inp = c.midi_inports.register("input")
-            cc_inp = c.midi_inports.register("cc_input")
-            outp = c.midi_outports.register("output")
-            preset_outp = c.midi_outports.register("preset_out")
-
-            @c.set_process_callback
-            def process(frames, _inp=inp, _cc_inp=cc_inp, _outp=outp, _preset_outp=preset_outp):
-                for offset, data in _inp.incoming_midi_events():
-                    try:
-                        event_q.put_nowait(bytes(data))
-                    except queue.Full:
-                        pass
-
-                for offset, data in _cc_inp.incoming_midi_events():
-                    try:
-                        cc_event_q.put_nowait(bytes(data))
-                    except queue.Full:
-                        pass
-
-                _outp.clear_buffer()
-                while True:
-                    try:
-                        msg = send_q.get_nowait()
-                        _outp.write_midi_event(0, msg)
-                    except queue.Empty:
-                        break
-
-                _preset_outp.clear_buffer()
-                while True:
-                    try:
-                        msg = fluida_send_q.get_nowait()
-                        _preset_outp.write_midi_event(0, msg)
-                    except queue.Empty:
-                        break
-
-            return c, inp, cc_inp, outp, preset_outp
+            return _open_jack_client_once()
         except jack.JackOpenError as exc:
             last_err = exc
             if attempt < JACK_OPEN_RETRIES:
-                print(
-                    f"JACK client '{JACK_CLIENT_NAME}' unavailable"
-                    f" (attempt {attempt}/{JACK_OPEN_RETRIES}): {exc}"
-                )
-                time.sleep(JACK_OPEN_RETRY_DELAY_S)
+                _log_jack_open_retry(attempt, exc)
     raise RuntimeError(
         f"Could not open JACK client '{JACK_CLIENT_NAME}' after"
         f" {JACK_OPEN_RETRIES} attempts: {last_err}"
@@ -783,6 +812,113 @@ def cleanup_session(
         mod_remove_quiet(inst)
 
 
+def _pop_cc_event() -> Optional[bytes]:
+    try:
+        return cc_event_q.get_nowait()
+    except queue.Empty:
+        return None
+
+
+def _is_cc_channel_control_change(msg, cc_mido_channel: int) -> bool:
+    return (
+        msg is not None
+        and msg.type == "control_change"
+        and msg.channel == cc_mido_channel
+    )
+
+
+def _get_or_create_cc_pickup(
+    cc_pickup: dict[int, CcPickupState], control: int
+) -> CcPickupState:
+    state = cc_pickup.get(control)
+    if state is None:
+        state = CcPickupState()
+        cc_pickup[control] = state
+    return state
+
+
+def _cc_soft_takeover_allows(
+    state: CcPickupState, control: int, midi_val: int
+) -> bool:
+    """Return False when soft takeover blocks applying this CC."""
+    if not CC_SOFT_TAKEOVER:
+        return True
+    if not pickup_should_apply(state, midi_val):
+        state.last_midi = midi_val
+        return False
+    if not state.armed:
+        state.armed = True
+        print(
+            f"🎚️  CC ch{CC_CHANNEL} cc={control} pickup"
+            f" (target={state.target_midi}, fader={midi_val})"
+        )
+    return True
+
+
+def _apply_cc_to_plugin(
+    control: int,
+    mapping: CcParamMapping,
+    midi_val: int,
+    state: CcPickupState,
+    applied_params: dict[tuple[int, str], float],
+    persist_state: Optional[Callable[..., None]] = None,
+) -> None:
+    param_val = midi_cc_to_param(midi_val, mapping)
+    try:
+        mod_param_set(mapping.instance, mapping.param, param_val)
+    except Exception as e:
+        print(
+            f"Failed CC ch{CC_CHANNEL} cc={control}"
+            f" -> {mapping.instance}:{mapping.param}: {e}"
+        )
+        return
+
+    applied_params[(mapping.instance, mapping.param)] = param_val
+    state.target_midi = midi_val
+
+    print(
+        f"🎚️  CC ch{CC_CHANNEL} cc={control}"
+        f" -> {mapping.instance}:{mapping.param}={param_val:.3f}"
+    )
+    if persist_state is not None:
+        persist_state()
+
+
+def _process_cc_event(
+    msg,
+    *,
+    cc_mido_channel: int,
+    cc_map: dict[int, CcParamMapping],
+    last_seen_midi: dict[int, int],
+    cc_pickup: dict[int, CcPickupState],
+    applied_params: dict[tuple[int, str], float],
+    persist_state: Optional[Callable[..., None]] = None,
+) -> None:
+    if not _is_cc_channel_control_change(msg, cc_mido_channel):
+        return
+
+    mapping = cc_map.get(msg.control)
+    if mapping is None:
+        return
+    if last_seen_midi.get(msg.control) == msg.value:
+        return
+
+    last_seen_midi[msg.control] = msg.value
+    state = _get_or_create_cc_pickup(cc_pickup, msg.control)
+    if not _cc_soft_takeover_allows(state, msg.control, msg.value):
+        return
+
+    state.last_midi = msg.value
+    _apply_cc_to_plugin(
+        msg.control,
+        mapping,
+        msg.value,
+        state,
+        applied_params,
+        persist_state,
+    )
+
+
 def drain_cc_events(
     last_seen_midi: dict[int, int],
     cc_map: dict[int, CcParamMapping],
@@ -796,60 +932,18 @@ def drain_cc_events(
 
     cc_mido_channel = CC_CHANNEL - 1
     while True:
-        try:
-            data = cc_event_q.get_nowait()
-        except queue.Empty:
+        data = _pop_cc_event()
+        if data is None:
             break
-
-        msg = decode_mido(data)
-        if msg is None or msg.type != "control_change":
-            continue
-        if msg.channel != cc_mido_channel:
-            continue
-
-        mapping = cc_map.get(msg.control)
-        if mapping is None:
-            continue
-        if last_seen_midi.get(msg.control) == msg.value:
-            continue
-
-        last_seen_midi[msg.control] = msg.value
-        state = cc_pickup.get(msg.control)
-        if state is None:
-            state = CcPickupState()
-            cc_pickup[msg.control] = state
-
-        if CC_SOFT_TAKEOVER:
-            if not pickup_should_apply(state, msg.value):
-                state.last_midi = msg.value
-                continue
-            if not state.armed:
-                state.armed = True
-                print(
-                    f"🎚️  CC ch{CC_CHANNEL} cc={msg.control} pickup"
-                    f" (target={state.target_midi}, fader={msg.value})"
-                )
-
-        state.last_midi = msg.value
-        param_val = midi_cc_to_param(msg.value, mapping)
-        try:
-            mod_param_set(mapping.instance, mapping.param, param_val)
-        except Exception as e:
-            print(
-                f"Failed CC ch{CC_CHANNEL} cc={msg.control}"
-                f" -> {mapping.instance}:{mapping.param}: {e}"
-            )
-            continue
-
-        applied_params[(mapping.instance, mapping.param)] = param_val
-        state.target_midi = msg.value
-
-        print(
-            f"🎚️  CC ch{CC_CHANNEL} cc={msg.control}"
-            f" -> {mapping.instance}:{mapping.param}={param_val:.3f}"
+        _process_cc_event(
+            decode_mido(data),
+            cc_mido_channel=cc_mido_channel,
+            cc_map=cc_map,
+            last_seen_midi=last_seen_midi,
+            cc_pickup=cc_pickup,
+            applied_params=applied_params,
+            persist_state=persist_state,
         )
-        if persist_state is not None:
-            persist_state()
 
 
 def handle_fluida_preset_cc(
@@ -946,14 +1040,50 @@ def drain_fluida_preset_cc_events(
 
 # ---- Main ----
 
-def main() -> None:
+@dataclass
+class RouterSession:
+    plugins: dict[str, Any]
+    connections: list[dict[str, str]]
+    cc_map: dict[int, CcParamMapping]
+    applied_params: dict[tuple[int, str], float]
+    restored_piano: Optional[int]
+    cc_mapped_instances: set[int]
+    plugin_ids: list[int]
+    piano_ids: list[int] = field(default_factory=list)
+    active_piano: Optional[int] = None
+    program_gains: dict[int, float] = field(default_factory=dict)
+    fluida_presets: dict[int, FluidaPresetConfig] = field(default_factory=dict)
+    fluida_instance_ids: set[int] = field(default_factory=set)
+    output_gain_instance: Optional[int] = None
+    output_gain_default: float = 0.0
+    loaded_ids: list[int] = field(default_factory=list)
+    active_connections: list[tuple[str, str]] = field(default_factory=list)
+    jack_midi_connections: list[tuple[jack.Port, jack.Port]] = field(
+        default_factory=list
+    )
+    jack_client: Optional[jack.Client] = None
+    jack_activated: bool = False
+    in_port: Optional[jack.Port] = None
+    cc_in_port: Optional[jack.Port] = None
+    out_port: Optional[jack.Port] = None
+    preset_out_port: Optional[jack.Port] = None
+
+
+@dataclass
+class MidiListenerState:
+    last_prog: Optional[int] = None
+    last_seen_midi: dict[int, int] = field(default_factory=dict)
+    last_fluida_preset_cc: dict[int, int] = field(default_factory=dict)
+
+
+def load_pedalboard_from_argv() -> dict[str, Any]:
     if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} /path/to/pedalboard.json", file=sys.stderr)
         sys.exit(2)
 
     pb_path = Path(sys.argv[1])
     try:
-        pb = json.loads(pb_path.read_text(encoding="utf-8"))
+        return json.loads(pb_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         print(f"Error: File not found: {pb_path}")
         sys.exit(1)
@@ -961,6 +1091,8 @@ def main() -> None:
         print(f"Error: Invalid JSON in {pb_path}: {e}")
         sys.exit(1)
 
+
+def init_router_session(pb: dict[str, Any]) -> tuple[RouterSession, list[tuple[int, str, float]]]:
     plugins: dict[str, Any] = pb.get("plugins", {})
     connections: list[dict[str, str]] = pb.get("connections", [])
     cc_map = build_cc_map(plugins)
@@ -969,379 +1101,567 @@ def main() -> None:
     restored_cc = merge_saved_plugin_controls(
         applied_params, saved_plugin_controls, cc_map
     )
-    cc_mapped_instances = instances_with_cc_maps(cc_map)
-    plugin_ids = sorted((int(sid) for sid in plugins.keys()))
+    session = RouterSession(
+        plugins=plugins,
+        connections=connections,
+        cc_map=cc_map,
+        applied_params=applied_params,
+        restored_piano=restored_piano,
+        cc_mapped_instances=instances_with_cc_maps(cc_map),
+        plugin_ids=sorted(int(sid) for sid in plugins.keys()),
+    )
+    return session, restored_cc
 
-    print("== Loading Plugins == ")
-    piano_ids = []
-    active_piano = None
-    program_gains: dict[int, float] = {}
-    fluida_presets: dict[int, FluidaPresetConfig] = {}
-    fluida_instance_ids: set[int] = set()
-    output_gain_instance: Optional[int] = None
-    output_gain_default = 0.0
 
-    loaded_ids: list[int] = []
+def find_output_gain_config(plugins: dict[str, Any]) -> tuple[Optional[int], float]:
+    for sid, plugin in plugins.items():
+        if not isinstance(plugin, dict):
+            continue
+        if plugin.get("uri") != OUTPUT_GAIN_URI:
+            continue
+
+        default = 0.0
+        out_controls = plugin.get("controls", {})
+        if isinstance(out_controls, dict):
+            try:
+                default = float(out_controls.get(OUTPUT_GAIN_PARAM, 0.0))
+            except (TypeError, ValueError):
+                default = 0.0
+        return int(sid), default
+    return None, 0.0
+
+
+def load_pedalboard_plugins(session: RouterSession) -> None:
+    for sid in sorted(session.plugins.keys(), key=lambda x: int(x)):
+        p = session.plugins[sid]
+        uri = p["uri"]
+        inst = int(sid)
+        if uri in PIANO_PLUGIN_URIS:
+            session.piano_ids.append(inst)
+            session.program_gains[inst] = get_plugin_gain(
+                p, session.output_gain_default
+            )
+
+        if uri == FLUIDA_URI:
+            session.fluida_instance_ids.add(inst)
+            preset_cfg = parse_fluida_preset(p)
+            if preset_cfg is not None:
+                session.fluida_presets[inst] = preset_cfg
+
+        print(f"== add {inst} {uri}")
+        try:
+            mod_add(uri, inst)
+            session.loaded_ids.append(inst)
+        except Exception as e:
+            print(f"Failed to add plugin {inst}: {e}")
+
+
+def _apply_plugin_patch_state(inst: int, state: dict[str, Any]) -> None:
+    for key, val in state.items():
+        print(f"== patch_set {inst} {key} = {val}")
+        try:
+            mod_patch_set(inst, key, str(val))
+        except Exception as e:
+            print(f"Failed patch_set {inst} {key}: {e}")
+
+
+def _apply_plugin_controls(
+    inst: int,
+    controls: dict[str, Any],
+    applied_params: dict[tuple[int, str], float],
+) -> None:
+    for symbol, val in controls.items():
+        sym = str(symbol)
+        effective = applied_params.get((inst, sym), val)
+        print(f"== param_set {inst} {sym} {effective}")
+        try:
+            mod_param_set(inst, sym, effective)
+            try:
+                applied_params[(inst, sym)] = float(effective)
+            except (TypeError, ValueError):
+                pass
+        except Exception as e:
+            print(f"Failed param_set {inst} {sym}: {e}")
+
+
+def _resolve_bypass_for_piano(
+    inst: int,
+    bypass_on: bool,
+    restored_piano: Optional[int],
+    piano_ids: list[int],
+) -> bool:
+    if restored_piano is None or inst not in piano_ids:
+        return bypass_on
+    return inst != restored_piano
+
+
+def _apply_plugin_bypass(
+    inst: int,
+    bypass_on: bool,
+    piano_ids: list[int],
+) -> bool:
+    """Apply bypass and return True if this instance became the active piano."""
+    print(f"== bypass {inst} {1 if bypass_on else 0}")
+    try:
+        mod_bypass(inst, bypass_on)
+    except Exception as e:
+        print(f"Failed bypass {inst}: {e}")
+        return False
+    return not bypass_on and inst in piano_ids
+
+
+def apply_pedalboard_state(session: RouterSession) -> None:
+    print("== Applying State & Controls ==")
+    for sid in sorted(session.plugins.keys(), key=lambda x: int(x)):
+        p = session.plugins[sid]
+        inst = int(sid)
+
+        state = p.get("state", {}) or {}
+        _apply_plugin_patch_state(inst, state)
+
+        controls = p.get("controls", {}) or {}
+        _apply_plugin_controls(inst, controls, session.applied_params)
+
+        if "bypass" not in p:
+            continue
+
+        bypass_on = _resolve_bypass_for_piano(
+            inst,
+            bool(p["bypass"]),
+            session.restored_piano,
+            session.piano_ids,
+        )
+        if _apply_plugin_bypass(inst, bypass_on, session.piano_ids):
+            session.active_piano = inst
+
+
+def print_restored_state(
+    restored_piano: Optional[int],
+    restored_cc: list[tuple[int, str, float]],
+) -> None:
+    if restored_piano is not None:
+        print(f"[State] Restored last active piano: {restored_piano}")
+    for inst, symbol, fval in restored_cc:
+        print(f"[State] Restored CC param {inst}:{symbol}={fval}")
+
+
+def print_startup_piano_status(active_piano: Optional[int]) -> None:
+    if active_piano is not None:
+        print(f"[Startup] Active piano: {active_piano}")
+        return
+    print(
+        "[Startup] Warning: No active piano (all pianos bypassed)."
+        " Send a Program Change to select one."
+    )
+
+
+def apply_startup_output_gain(session: RouterSession) -> None:
+    if session.output_gain_instance is None or session.active_piano is None:
+        return
+    startup_gain = session.program_gains.get(
+        session.active_piano, session.output_gain_default
+    )
+    print(f"== output gain for {session.active_piano}: {startup_gain} dB")
+    try:
+        mod_param_set(
+            session.output_gain_instance, OUTPUT_GAIN_PARAM, startup_gain
+        )
+    except Exception as e:
+        print(f"Failed output gain set for {session.active_piano}: {e}")
+
+
+def connect_pedalboard_ports(
+    connections: list[dict[str, str]],
+) -> list[tuple[str, str]]:
     active_connections: list[tuple[str, str]] = []
-    jack_midi_connections: list[tuple[jack.Port, jack.Port]] = []
-    jack_client: Optional[jack.Client] = None
-    jack_activated = False
-    in_port: Optional[jack.Port] = None
-    cc_in_port: Optional[jack.Port] = None
-    out_port: Optional[jack.Port] = None
-    preset_out_port: Optional[jack.Port] = None
+    print("== Connecting Ports ==")
+    for c in connections:
+        src = expand_port(c["from"])
+        dst = expand_port(c["to"])
+        print(f"== connect {src} -> {dst}")
+        try:
+            mod_connect(src, dst)
+            active_connections.append((src, dst))
+        except Exception as e:
+            print(f"Failed connect {src}->{dst}: {e}")
+    return active_connections
 
-    def maybe_send_fluida_preset(instance: int, preset: Optional[int] = None) -> None:
-        if jack_client is None or preset_out_port is None:
-            return
-        base = fluida_presets.get(instance)
-        if base is None:
-            for src, dst in reversed(jack_midi_connections):
-                if src is preset_out_port:
-                    try:
-                        jack_client.disconnect(src, dst)
-                        jack_midi_connections.remove((src, dst))
-                    except jack.JackError:
-                        pass
-            return
-        config = FluidaPresetConfig(
-            preset=base.preset if preset is None else preset,
-            bank_msb=base.bank_msb,
-            bank_lsb=base.bank_lsb,
-        )
-        send_fluida_preset(
-            jack_client,
-            preset_out_port,
-            instance,
-            config,
-            jack_midi_connections,
-        )
 
-    def persist_state(force: bool = False) -> None:
-        save_router_state(active_piano, applied_params, cc_map, force=force)
+def maybe_send_fluida_preset(
+    session: RouterSession,
+    instance: int,
+    preset: Optional[int] = None,
+) -> None:
+    if session.jack_client is None or session.preset_out_port is None:
+        return
+    base = session.fluida_presets.get(instance)
+    if base is None:
+        for src, dst in reversed(session.jack_midi_connections):
+            if src is not session.preset_out_port:
+                continue
+            try:
+                session.jack_client.disconnect(src, dst)
+                session.jack_midi_connections.remove((src, dst))
+            except jack.JackError:
+                pass
+        return
+    config = FluidaPresetConfig(
+        preset=base.preset if preset is None else preset,
+        bank_msb=base.bank_msb,
+        bank_lsb=base.bank_lsb,
+    )
+    send_fluida_preset(
+        session.jack_client,
+        session.preset_out_port,
+        instance,
+        config,
+        session.jack_midi_connections,
+    )
+
+
+def sync_sl88_to_active_piano(session: RouterSession) -> None:
+    if session.active_piano is None:
+        return
+    if (
+        session.jack_client is None
+        or session.out_port is None
+        or session.in_port is None
+    ):
+        return
+
+    print(
+        f"[SL88 Sync] Attempting to sync SL88 to active piano"
+        f" {session.active_piano}..."
+    )
+    src_name = session.out_port.name
+    dst_name = SL88_TARGET_PORT
+    sl_dest = session.jack_client.get_port_by_name(SL88_TARGET_PORT)
+
+    if dst_name == session.in_port.name:
+        print(
+            f"[SL88 Sync] ERROR: Refusing to connect {src_name} -> {dst_name}"
+            " (self-loop)"
+        )
+        maybe_send_fluida_preset(session, session.active_piano)
+        return
 
     try:
-        sweep_stale_plugins(plugin_ids)
+        session.jack_client.connect(session.out_port, sl_dest)
+        session.jack_midi_connections.append((session.out_port, sl_dest))
+        print(f"[SL88 Sync] Connected {src_name} -> {dst_name}")
 
-        jack_client, in_port, cc_in_port, out_port, preset_out_port = create_jack_client()
-        print(f"Opened JACK client: {jack_client.name}")
+        status = 0xC0 | (COMMON_CHANNEL - 1)
+        msg_bytes = bytes([status, session.active_piano])
+        send_q.put(msg_bytes)
+        print(
+            f"[SL88 Sync] Queued ONE-SHOT Program Change: {session.active_piano}"
+            f" on Ch{COMMON_CHANNEL} (Hex: {msg_bytes.hex()})"
+        )
+    except Exception as e:
+        print(f"[SL88 Sync] Failed: {e}")
 
-        for sid, plugin in plugins.items():
-            if not isinstance(plugin, dict):
-                continue
-            if plugin.get("uri") != OUTPUT_GAIN_URI:
-                continue
+    maybe_send_fluida_preset(session, session.active_piano)
 
-            output_gain_instance = int(sid)
-            out_controls = plugin.get("controls", {})
-            if isinstance(out_controls, dict):
-                try:
-                    output_gain_default = float(out_controls.get(OUTPUT_GAIN_PARAM, 0.0))
-                except (TypeError, ValueError):
-                    output_gain_default = 0.0
-            break
 
-        for sid in sorted(plugins.keys(), key=lambda x: int(x)):
-            p = plugins[sid]
-            uri = p["uri"]
-            inst = int(sid)
-            if uri in (
-               "http://sfztools.github.io/sfizz",
-               FLUIDA_URI,
-               "http://studionumbersix.com/foo/lv2/yc20",
-               "http://bristol.sourceforge.net/lv2/vox",
-               "https://ho-ro.net/connie/lv2",
-            ):
-                piano_ids.append(inst)
-                program_gains[inst] = get_plugin_gain(p, output_gain_default)
+def setup_midi_input_listeners(session: RouterSession) -> None:
+    if session.jack_client is None or session.in_port is None:
+        return
 
-            if uri == FLUIDA_URI:
-                fluida_instance_ids.add(inst)
-                preset_cfg = parse_fluida_preset(p)
-                if preset_cfg is not None:
-                    fluida_presets[inst] = preset_cfg
+    print("Starting JACK MIDI listener for Program Changes...")
+    print(f"Listening on: {session.jack_client.name}:input")
+    connect_jack_midi_source(
+        session.jack_client, TARGET_PORT, session.in_port, session.jack_midi_connections
+    )
 
-            print(f'== add {inst} {uri}')
-            try:
-                mod_add(uri, inst)
-                loaded_ids.append(inst)
-            except Exception as e:
-                print(f"Failed to add plugin {inst}: {e}")
+    print(f"Listening for Control Changes on ch{CC_CHANNEL}...")
+    print(f"Listening on: {session.jack_client.name}:cc_input")
+    if session.cc_map:
+        for cc_num in sorted(session.cc_map):
+            m = session.cc_map[cc_num]
+            print(f"  CC {cc_num} -> {m.instance}:{m.param}")
+        takeover = "on" if CC_SOFT_TAKEOVER else "off"
+        print(f"  Soft takeover: {takeover} (threshold={CC_PICKUP_THRESHOLD})")
+        connect_jack_midi_source(
+            session.jack_client,
+            CC_TARGET_PORT,
+            session.cc_in_port,
+            session.jack_midi_connections,
+        )
+    else:
+        print("  (no plugin midi_cc mappings in pedalboard)")
 
-        restored_piano = normalize_restored_piano(restored_piano, piano_ids)
-
-        if restored_piano is not None:
-            print(f"[State] Restored last active piano: {restored_piano}")
-        for inst, symbol, fval in restored_cc:
-            print(f"[State] Restored CC param {inst}:{symbol}={fval}")
-
-        print("== Applying State & Controls ==")
-        for sid in sorted(plugins.keys(), key=lambda x: int(x)):
-            p = plugins[sid]
-            inst = int(sid)
-
-            state = p.get("state", {}) or {}
-            for key, val in state.items():
-                print(f"== patch_set {inst} {key} = {val}")
-                try:
-                    mod_patch_set(inst, key, str(val))
-                except Exception as e:
-                    print(f"Failed patch_set {inst} {key}: {e}")
-
-            controls = p.get("controls", {}) or {}
-            for symbol, val in controls.items():
-                sym = str(symbol)
-                effective = applied_params.get((inst, sym), val)
-                print(f"== param_set {inst} {sym} {effective}")
-                try:
-                    mod_param_set(inst, sym, effective)
-                    try:
-                        applied_params[(inst, sym)] = float(effective)
-                    except (TypeError, ValueError):
-                        pass
-                except Exception as e:
-                    print(f"Failed param_set {inst} {sym}: {e}")
-
-            if "bypass" in p:
-                bypass_on = bool(p["bypass"])
-
-                if restored_piano is not None and inst in piano_ids:
-                    if inst == restored_piano:
-                        bypass_on = False
-                    else:
-                        bypass_on = True
-
-                print(f"== bypass {inst} {1 if bypass_on else 0}")
-                try:
-                    mod_bypass(inst, bypass_on)
-                    if not bypass_on and inst in piano_ids:
-                        active_piano = inst
-                except Exception as e:
-                    print(f"Failed bypass {inst}: {e}")
-
-        cc_pickup = init_cc_pickup(cc_map, applied_params)
-
-        if active_piano is not None:
-            print(f"[Startup] Active piano: {active_piano}")
-        else:
-            print(
-                "[Startup] Warning: No active piano (all pianos bypassed)."
-                " Send a Program Change to select one."
-            )
-
-        if output_gain_instance is not None and active_piano is not None:
-            startup_gain = program_gains.get(active_piano, output_gain_default)
-            print(f"== output gain for {active_piano}: {startup_gain} dB")
-            try:
-                mod_param_set(output_gain_instance, OUTPUT_GAIN_PARAM, startup_gain)
-            except Exception as e:
-                print(f"Failed output gain set for {active_piano}: {e}")
-
-        time.sleep(0.2)
-
-        print("== Connecting Ports ==")
-        for c in connections:
-            src = expand_port(c["from"])
-            dst = expand_port(c["to"])
-            print(f"== connect {src} -> {dst}")
-            try:
-                mod_connect(src, dst)
-                active_connections.append((src, dst))
-            except Exception as e:
-                print(f"Failed connect {src}->{dst}: {e}")
-
-        print("== done loading ==")
-        print("---------------------------------------------------")
-
-        jack_client.activate()
-        jack_activated = True
-        print(f"Activated JACK client: {jack_client.name}")
-
-        if active_piano is not None:
-            print(f"[SL88 Sync] Attempting to sync SL88 to active piano {active_piano}...")
-
-            target_port_name = "system:midi_playback_1"
-            src_name = out_port.name
-            dst_name = target_port_name
-            sl_dest = jack_client.get_port_by_name(target_port_name)
-
-            if dst_name == in_port.name:
-                print(f"[SL88 Sync] ERROR: Refusing to connect {src_name} -> {dst_name} (self-loop)")
-            else:
-                try:
-                    jack_client.connect(out_port, sl_dest)
-                    jack_midi_connections.append((out_port, sl_dest))
-                    print(f"[SL88 Sync] Connected {src_name} -> {dst_name}")
-
-                    status = 0xC0 | (COMMON_CHANNEL - 1)
-                    msg_bytes = bytes([status, active_piano])
-                    send_q.put(msg_bytes)
-                    print(
-                        f"[SL88 Sync] Queued ONE-SHOT Program Change: {active_piano}"
-                        f" on Ch{COMMON_CHANNEL} (Hex: {msg_bytes.hex()})"
-                    )
-                except Exception as e:
-                    print(f"[SL88 Sync] Failed: {e}")
-
-            maybe_send_fluida_preset(active_piano)
-
-        print("Starting JACK MIDI listener for Program Changes...")
-        print(f"Listening on: {jack_client.name}:input")
-        connect_jack_midi_source(jack_client, TARGET_PORT, in_port, jack_midi_connections)
-
-        print(f"Listening for Control Changes on ch{CC_CHANNEL}...")
-        print(f"Listening on: {jack_client.name}:cc_input")
-        if cc_map:
-            for cc_num in sorted(cc_map):
-                m = cc_map[cc_num]
-                print(f"  CC {cc_num} -> {m.instance}:{m.param}")
-            takeover = "on" if CC_SOFT_TAKEOVER else "off"
-            print(f"  Soft takeover: {takeover} (threshold={CC_PICKUP_THRESHOLD})")
-            connect_jack_midi_source(
-                jack_client, CC_TARGET_PORT, cc_in_port, jack_midi_connections
-            )
-        else:
-            print("  (no plugin midi_cc mappings in pedalboard)")
-
-        if fluida_presets:
-            print(
-                f"Listening for Fluida preset CC {FLUIDA_PRESET_CC}"
-                f" on ch{COMMON_CHANNEL} (input + cc_input ports)"
-            )
-
-        print("Listening for MIDI events... (Ctrl+C to stop)")
-        print(f"Mapping: Program Change X -> Piano Instance X. Detected Pianos: {sorted(piano_ids)}")
-
-        last_prog = None
-        last_seen_midi: dict[int, int] = {}
-        last_fluida_preset_cc: dict[int, int] = {}
-
-        send_fluida_preset_from_cc = (
-            lambda inst, preset: maybe_send_fluida_preset(inst, preset)
+    if session.fluida_presets:
+        print(
+            f"Listening for Fluida preset CC {FLUIDA_PRESET_CC}"
+            f" on ch{COMMON_CHANNEL} (input + cc_input ports)"
         )
 
-        if CC_SOFT_TAKEOVER and active_piano in cc_mapped_instances:
-            reset_ccs = reset_pickup_for_instance(
-                active_piano, cc_map, applied_params, cc_pickup
+    print("Listening for MIDI events... (Ctrl+C to stop)")
+    print(
+        "Mapping: Program Change X -> Piano Instance X."
+        f" Detected Pianos: {sorted(session.piano_ids)}"
+    )
+
+
+def arm_cc_soft_takeover(
+    active_piano: Optional[int],
+    cc_map: dict[int, CcParamMapping],
+    applied_params: dict[tuple[int, str], float],
+    cc_pickup: dict[int, CcPickupState],
+    cc_mapped_instances: set[int],
+    *,
+    prefix: str = "[CC]",
+) -> None:
+    if not CC_SOFT_TAKEOVER or active_piano not in cc_mapped_instances:
+        return
+    reset_ccs = reset_pickup_for_instance(
+        active_piano, cc_map, applied_params, cc_pickup
+    )
+    if reset_ccs:
+        print(
+            f"{prefix} Soft takeover armed for instance {active_piano}"
+            f" (CCs {reset_ccs})"
+        )
+
+
+def _drain_aux_midi_queues(
+    session: RouterSession,
+    cc_pickup: dict[int, CcPickupState],
+    listener_state: MidiListenerState,
+    persist_state_fn: Callable[..., None],
+) -> None:
+    drain_cc_events(
+        listener_state.last_seen_midi,
+        session.cc_map,
+        session.applied_params,
+        cc_pickup,
+        persist_state_fn,
+    )
+    drain_fluida_preset_cc_events(
+        cc_event_q,
+        source="cc_input",
+        active_piano=session.active_piano,
+        fluida_presets=session.fluida_presets,
+        fluida_instance_ids=session.fluida_instance_ids,
+        last_fluida_preset_cc=listener_state.last_fluida_preset_cc,
+        send_preset=lambda inst, preset: maybe_send_fluida_preset(
+            session, inst, preset
+        ),
+    )
+
+
+def _warn_undecodable_program_change(data: bytes) -> None:
+    if data and len(data) >= 2 and (data[0] & 0xF0) == 0xC0:
+        print(f"[MIDI] Warning: undecodable program change: {data.hex()}")
+
+
+def _should_ignore_program_change(msg, last_prog: Optional[int]) -> bool:
+    if msg.type != "program_change":
+        return True
+    if FILTER_CHANNEL is not None and msg.channel != FILTER_CHANNEL:
+        return True
+    return msg.program == last_prog
+
+
+def _set_piano_bypass_states(piano_ids: list[int], active_inst: int) -> None:
+    for inst in piano_ids:
+        bypass_val = inst != active_inst
+        try:
+            mod_bypass(inst, bypass_val)
+        except Exception as e:
+            print(f"   Failed to set bypass for {inst}: {e}")
+
+
+def _apply_output_gain_for_piano(session: RouterSession, prog: int) -> None:
+    if session.output_gain_instance is None:
+        return
+    switch_gain = session.program_gains.get(prog, session.output_gain_default)
+    print(f"   Setting output gain to {switch_gain} dB")
+    try:
+        mod_param_set(session.output_gain_instance, OUTPUT_GAIN_PARAM, switch_gain)
+    except Exception as e:
+        print(f"   Failed output gain set for {prog}: {e}")
+
+
+def switch_active_piano(
+    session: RouterSession,
+    prog: int,
+    cc_pickup: dict[int, CcPickupState],
+    persist_state_fn: Callable[..., None],
+) -> None:
+    print(f"   Selecting Piano {prog}...")
+    _set_piano_bypass_states(session.piano_ids, prog)
+    arm_cc_soft_takeover(
+        prog,
+        session.cc_map,
+        session.applied_params,
+        cc_pickup,
+        session.cc_mapped_instances,
+        prefix="   [CC]",
+    )
+    _apply_output_gain_for_piano(session, prog)
+    session.active_piano = prog
+    maybe_send_fluida_preset(session, prog)
+    try:
+        persist_state_fn(force=True)
+        print(f"   [State] Saved active piano {prog} to {STATE_FILE}")
+    except Exception as e:
+        print(f"   [State] Failed to save state: {e}")
+
+
+def _handle_program_change_message(
+    msg,
+    session: RouterSession,
+    cc_pickup: dict[int, CcPickupState],
+    listener_state: MidiListenerState,
+    persist_state_fn: Callable[..., None],
+) -> bool:
+    """Process a program change. Returns True when the listener loop should stop."""
+    if _should_ignore_program_change(msg, listener_state.last_prog):
+        return False
+
+    prog = msg.program
+    listener_state.last_prog = prog
+
+    if prog == KILL_PC:
+        print("[midi-shutdown] Shutdown via Program Change")
+        subprocess.run(["sudo", "/bin/systemctl", "poweroff"])
+        return True
+
+    print(f"🎹 PROGRAM CHANGE -> program={prog}, channel={msg.channel}")
+    if prog in session.piano_ids:
+        switch_active_piano(session, prog, cc_pickup, persist_state_fn)
+    else:
+        print(
+            f"   (Program {prog} is not a known piano instance, ignoring switch)"
+        )
+    return False
+
+
+def _process_incoming_midi_event(
+    data: bytes,
+    session: RouterSession,
+    cc_pickup: dict[int, CcPickupState],
+    listener_state: MidiListenerState,
+    persist_state_fn: Callable[..., None],
+) -> bool:
+    """Handle one queued MIDI event. Returns True when the listener loop should stop."""
+    _drain_aux_midi_queues(session, cc_pickup, listener_state, persist_state_fn)
+
+    msg = decode_mido(data)
+    if msg is None:
+        _warn_undecodable_program_change(data)
+        return False
+
+    if handle_fluida_preset_cc(
+        msg,
+        active_piano=session.active_piano,
+        fluida_presets=session.fluida_presets,
+        fluida_instance_ids=session.fluida_instance_ids,
+        last_fluida_preset_cc=listener_state.last_fluida_preset_cc,
+        send_preset=lambda inst, preset: maybe_send_fluida_preset(
+            session, inst, preset
+        ),
+        source="input",
+    ):
+        return False
+
+    return _handle_program_change_message(
+        msg, session, cc_pickup, listener_state, persist_state_fn
+    )
+
+
+def run_midi_event_loop(
+    session: RouterSession,
+    cc_pickup: dict[int, CcPickupState],
+    persist_state_fn: Callable[..., None],
+) -> None:
+    listener_state = MidiListenerState()
+    arm_cc_soft_takeover(
+        session.active_piano,
+        session.cc_map,
+        session.applied_params,
+        cc_pickup,
+        session.cc_mapped_instances,
+    )
+
+    while not stop_event.is_set():
+        try:
+            data = event_q.get(timeout=0.25)
+        except queue.Empty:
+            _drain_aux_midi_queues(
+                session, cc_pickup, listener_state, persist_state_fn
             )
-            if reset_ccs:
-                print(
-                    f"[CC] Soft takeover armed for instance {active_piano}"
-                    f" (CCs {reset_ccs})"
-                )
+            continue
 
-        while not stop_event.is_set():
-            try:
-                data = event_q.get(timeout=0.25)
-            except queue.Empty:
-                drain_cc_events(
-                    last_seen_midi, cc_map, applied_params, cc_pickup, persist_state
-                )
-                drain_fluida_preset_cc_events(
-                    cc_event_q,
-                    source="cc_input",
-                    active_piano=active_piano,
-                    fluida_presets=fluida_presets,
-                    fluida_instance_ids=fluida_instance_ids,
-                    last_fluida_preset_cc=last_fluida_preset_cc,
-                    send_preset=send_fluida_preset_from_cc,
-                )
-                continue
+        if _process_incoming_midi_event(
+            data, session, cc_pickup, listener_state, persist_state_fn
+        ):
+            break
 
-            drain_cc_events(
-                last_seen_midi, cc_map, applied_params, cc_pickup, persist_state
-            )
-            drain_fluida_preset_cc_events(
-                cc_event_q,
-                source="cc_input",
-                active_piano=active_piano,
-                fluida_presets=fluida_presets,
-                fluida_instance_ids=fluida_instance_ids,
-                last_fluida_preset_cc=last_fluida_preset_cc,
-                send_preset=send_fluida_preset_from_cc,
-            )
 
-            msg = decode_mido(data)
-            if msg is None:
-                if data and len(data) >= 2 and (data[0] & 0xF0) == 0xC0:
-                    print(f"[MIDI] Warning: undecodable program change: {data.hex()}")
-                continue
+def run_loader_session(
+    session: RouterSession,
+    restored_cc: list[tuple[int, str, float]],
+    persist_state_fn: Callable[..., None],
+) -> None:
+    sweep_stale_plugins(session.plugin_ids)
 
-            if handle_fluida_preset_cc(
-                msg,
-                active_piano=active_piano,
-                fluida_presets=fluida_presets,
-                fluida_instance_ids=fluida_instance_ids,
-                last_fluida_preset_cc=last_fluida_preset_cc,
-                send_preset=send_fluida_preset_from_cc,
-                source="input",
-            ):
-                continue
+    (
+        session.jack_client,
+        session.in_port,
+        session.cc_in_port,
+        session.out_port,
+        session.preset_out_port,
+    ) = create_jack_client()
+    print(f"Opened JACK client: {session.jack_client.name}")
 
-            if msg.type != "program_change":
-                continue
+    session.output_gain_instance, session.output_gain_default = find_output_gain_config(
+        session.plugins
+    )
+    load_pedalboard_plugins(session)
 
-            if FILTER_CHANNEL is not None and msg.channel != FILTER_CHANNEL:
-                continue
+    session.restored_piano = normalize_restored_piano(
+        session.restored_piano, session.piano_ids
+    )
+    print_restored_state(session.restored_piano, restored_cc)
+    apply_pedalboard_state(session)
 
-            prog = msg.program
+    cc_pickup = init_cc_pickup(session.cc_map, session.applied_params)
+    print_startup_piano_status(session.active_piano)
+    apply_startup_output_gain(session)
 
-            # Optional debounce
-            if prog == last_prog:
-                continue
-            last_prog = prog
+    time.sleep(0.2)
+    session.active_connections = connect_pedalboard_ports(session.connections)
 
-            if prog == KILL_PC:
-                print("[midi-shutdown] Shutdown via Program Change")
-                subprocess.run(["sudo", "/bin/systemctl", "poweroff"])
-                break
+    print("== done loading ==")
+    print("---------------------------------------------------")
 
-            print(f"🎹 PROGRAM CHANGE -> program={prog}, channel={msg.channel}")
+    session.jack_client.activate()
+    session.jack_activated = True
+    print(f"Activated JACK client: {session.jack_client.name}")
 
-            # Mapping Logic
-            if prog in piano_ids:
-                print(f"   Selecting Piano {prog}...")
-                
-                for inst in piano_ids:
-                    should_be_active = (inst == prog)
-                    bypass_val = False if should_be_active else True
-                    
-                    try:
-                         mod_bypass(inst, bypass_val)
-                    except Exception as e:
-                        print(f"   Failed to set bypass for {inst}: {e}")
+    sync_sl88_to_active_piano(session)
+    setup_midi_input_listeners(session)
+    run_midi_event_loop(session, cc_pickup, persist_state_fn)
 
-                if CC_SOFT_TAKEOVER and prog in cc_mapped_instances:
-                    reset_ccs = reset_pickup_for_instance(
-                        prog, cc_map, applied_params, cc_pickup
-                    )
-                    if reset_ccs:
-                        print(
-                            f"   [CC] Soft takeover armed for instance {prog}"
-                            f" (CCs {reset_ccs})"
-                        )
+    if _shutdown_signal is not None:
+        log(f"Received signal {_shutdown_signal}, stopping...")
 
-                if output_gain_instance is not None:
-                    switch_gain = program_gains.get(prog, output_gain_default)
-                    print(f"   Setting output gain to {switch_gain} dB")
-                    try:
-                        mod_param_set(output_gain_instance, OUTPUT_GAIN_PARAM, switch_gain)
-                    except Exception as e:
-                        print(f"   Failed output gain set for {prog}: {e}")
 
-                active_piano = prog
-                maybe_send_fluida_preset(prog)
-                try:
-                    persist_state(force=True)
-                    print(f"   [State] Saved active piano {prog} to {STATE_FILE}")
-                except Exception as e:
-                     print(f"   [State] Failed to save state: {e}")
-            else:
-                print(f"   (Program {prog} is not a known piano instance, ignoring switch)")
+def main() -> None:
+    pb = load_pedalboard_from_argv()
+    session, restored_cc = init_router_session(pb)
 
-        if _shutdown_signal is not None:
-            log(f"Received signal {_shutdown_signal}, stopping...")
+    print("== Loading Plugins == ")
 
+    def persist_state(force: bool = False) -> None:
+        save_router_state(
+            session.active_piano, session.applied_params, session.cc_map, force=force
+        )
+
+    try:
+        run_loader_session(session, restored_cc, persist_state)
     except KeyboardInterrupt:
         log("Stopping...")
     except Exception as e:
@@ -1349,11 +1669,11 @@ def main() -> None:
         raise
     finally:
         cleanup_session(
-            loaded_ids=loaded_ids,
-            active_connections=active_connections,
-            jack_midi_connections=jack_midi_connections,
-            jack_client=jack_client,
-            jack_activated=jack_activated,
+            loaded_ids=session.loaded_ids,
+            active_connections=session.active_connections,
+            jack_midi_connections=session.jack_midi_connections,
+            jack_client=session.jack_client,
+            jack_activated=session.jack_activated,
             persist_state_fn=persist_state,
         )
 

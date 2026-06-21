@@ -46,7 +46,7 @@ def force_initial_program(midiout, program: int) -> None:
 
 def main():
     try:
-        midiout, out_name = open_sl_ctrl_out()
+        midiout, _ = open_sl_ctrl_out()
     except Exception as e:
         print(f"[sfizz-router] ERROR opening MIDI ports: {e}")
         sys.exit(1)
