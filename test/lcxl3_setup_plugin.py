@@ -34,7 +34,7 @@ from lcxl3 import (  # noqa: E402
     build_custom_mode_messages,
     build_global_channel_midi_messages,
     build_slot_select_sysex,
-    parse_lcxl_layout,
+    resolve_lcxl_cc_lists,
 )
 
 DEFAULT_PEDALBOARD = ROOT / "jsons" / "plus.json"
@@ -84,7 +84,9 @@ def cc_labels(plugin: dict[str, Any]) -> dict[int, str]:
 
 def print_layout_summary(
     plugin: dict[str, Any],
-    layout: dict[str, list],
+    faders: list[int],
+    encoders: list[int],
+    buttons: list[int | None],
     channel: int,
 ) -> None:
     symbol = plugin.get("symbol", "?")
@@ -98,14 +100,12 @@ def print_layout_summary(
     print(f"Instrument: {symbol} (instance {plugin.get('_instance', '?')})")
     print(f"LCXL3 MIDI channel: {channel}")
     print("Faders:")
-    for idx, cc in enumerate(layout["faders"]):
+    for idx, cc in enumerate(faders):
         line("Fader", idx, cc)
-    if layout["encoders"]:
+    if encoders:
         print("Encoders:")
-        for row_idx, row in enumerate(layout["encoders"]):
-            for col_idx, cc in enumerate(row):
-                line(f"Enc row {row_idx + 1}", col_idx + row_idx * 8, cc)
-    buttons = layout.get("buttons") or []
+        for idx, cc in enumerate(encoders):
+            line("Enc", idx, cc)
     if any(b is not None for b in buttons):
         print("Fader buttons:")
         for idx, cc in enumerate(buttons):
@@ -437,7 +437,6 @@ def send_jack_sysex(payload: bytes, *, daw_in: Optional[str]) -> str:
 
 def build_messages(
     plugin: dict[str, Any],
-    layout: dict[str, list],
     *,
     channel: int,
     slot: int,
@@ -445,7 +444,7 @@ def build_messages(
 ) -> list[tuple[str, bytes]]:
     symbol = str(plugin.get("symbol") or "router")
     labels = cc_labels(plugin)
-    flat_encoders = [cc for row in layout["encoders"] for cc in row]
+    faders, flat_encoders, buttons = resolve_lcxl_cc_lists(plugin.get("lcxl"))
     messages: list[tuple[str, bytes]] = []
     if select_slot is not None:
         messages.append(
@@ -454,9 +453,9 @@ def build_messages(
     for page_idx, payload in enumerate(
         build_custom_mode_messages(
             symbol[:14],
-            faders=layout["faders"],
+            faders=faders,
             encoders=flat_encoders,
-            buttons=layout.get("buttons") or [],
+            buttons=buttons,
             channel=channel,
             slot=slot,
             labels=labels,
@@ -583,14 +582,10 @@ def main() -> None:
 
     plugin = load_plugin(pedalboard, args.instance)
     plugin["_instance"] = args.instance
-    layout = parse_lcxl_layout(plugin.get("lcxl"))
-    if layout is None:
-        raise SystemExit(
-            f"Plugin {args.instance} ({plugin.get('symbol', '?')}) has no usable 'lcxl' section"
-        )
 
     channel = resolve_channel(plugin, args.channel)
-    print_layout_summary(plugin, layout, channel)
+    faders, encoders, buttons = resolve_lcxl_cc_lists(plugin.get("lcxl"))
+    print_layout_summary(plugin, faders, encoders, buttons, channel)
     print()
 
     if args.probe_only:
@@ -604,7 +599,6 @@ def main() -> None:
 
     messages = build_messages(
         plugin,
-        layout,
         channel=channel,
         slot=args.slot,
         select_slot=args.select_slot,
