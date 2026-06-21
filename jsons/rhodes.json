@@ -15,15 +15,14 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/JRhodes3d-st-no-xfade/jRhodes3d-st-no-xfade.sfz"
       }
     },
-     "36": {
+    "36": {
       "uri": "http://guitarix.sourceforge.net/plugins/gx_switchless_wah#wah",
       "urix": "http://calf.sourceforge.net/plugins/EnvelopeFilter",
       "symbol": "wah",
       "bypass": true,
       "x": 350,
       "y": 200
-     }
-
+    }
   },
   "connections": [
     {

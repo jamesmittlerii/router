@@ -75,7 +75,7 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/JRhodes3d-st-no-xfade/jRhodes3d-st-no-xfade.sfz"
       }
     },
-     "35": {
+    "35": {
       "uri": "http://calf.sourceforge.net/plugins/StereoTools",
       "symbol": "stereotools",
       "bypass": false,
@@ -84,37 +84,37 @@
       "controls": {
         "mode": 5.0
       }
-     },
-     "36": {
+    },
+    "36": {
       "uri": "http://guitarix.sourceforge.net/plugins/gx_switchless_wah#wah",
       "urix": "http://calf.sourceforge.net/plugins/EnvelopeFilter",
       "symbol": "wah",
       "bypass": true,
       "x": 350,
       "y": 200
-     },
-     "37": {
+    },
+    "37": {
       "uri": "http://calf.sourceforge.net/plugins/Saturator",
       "symbol": "saturator",
       "bypass": true,
       "x": 350,
       "y": 200
     },
-     "38": {
+    "38": {
       "uri": "http://lsp-plug.in/plugins/lv2/para_equalizer_x16_stereo",
       "symbol": "eq",
       "bypass": true,
       "x": 350,
       "y": 200
     },
-     "39": {
+    "39": {
       "uri": "http://calf.sourceforge.net/plugins/Compressor",
       "symbol": "compressor",
       "bypass": true,
       "x": 350,
       "y": 200
     },
-     "40": {
+    "40": {
       "uri": "http://calf.sourceforge.net/plugins/Pulsator",
       "symbol": "pulsator",
       "bypass": true,
@@ -150,7 +150,6 @@
       "x": 850,
       "y": 200
     }
-
   },
   "connections": [
     {
@@ -192,7 +191,7 @@
     {
       "from": "11:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "11:out_right",
       "to": "35:in_r"
@@ -200,7 +199,7 @@
     {
       "from": "12:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "12:out_right",
       "to": "35:in_r"
@@ -208,7 +207,7 @@
     {
       "from": "13:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "13:out_right",
       "to": "35:in_r"
@@ -216,7 +215,7 @@
     {
       "from": "14:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "14:out_right",
       "to": "35:in_r"
@@ -224,7 +223,7 @@
     {
       "from": "15:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "15:out_right",
       "to": "35:in_r"
@@ -232,7 +231,7 @@
     {
       "from": "16:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "16:out_right",
       "to": "35:in_r"
@@ -241,19 +240,19 @@
       "from": "35:out_l",
       "to": "36:in"
     },
-    { 
+    {
       "from": "36:out",
       "to": "37:in_l"
     },
-    { 
+    {
       "from": "36:out",
       "to": "37:in_r"
     },
-    { 
+    {
       "from": "37:out_l",
       "to": "38:in_l"
     },
-    { 
+    {
       "from": "37:out_r",
       "to": "38:in_r"
     },
@@ -289,7 +288,7 @@
       "from": "41:out_r",
       "to": "42:in_r"
     },
-    { 
+    {
       "from": "42:out_l",
       "to": "43:In1"
     },
@@ -297,7 +296,7 @@
       "from": "42:out_r",
       "to": "43:In2"
     },
-    { 
+    {
       "from": "43:Out1",
       "to": "44:in_l"
     },

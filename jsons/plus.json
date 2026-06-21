@@ -103,7 +103,7 @@
         "volume": 0.0
       }
     },
-       "17": {
+    "17": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfz-electricv-le",
       "bypass": true,
@@ -181,17 +181,17 @@
         "volume": 0.0
       }
     },
-       "23": {
+    "23": {
       "uri": "https://github.com/brummer10/Fluida.lv2",
       "symbol": "sf2-westcoast-guitar",
       "bypass": true,
       "gain": 20.0,
       "x": 100,
-      "y": 200, 
+      "y": 200,
       "state": {
         "https://github.com/brummer10/Fluida.lv2#soundfont": "/usr/local/share/sf2/guitars/West Coast Guitar/West_Coast_Guitar.sf2"
       }
-    },  
+    },
     "24": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-mdm-guitar",
@@ -206,41 +206,40 @@
         "volume": 0.0
       }
     },
-"25": {
-  "uri": "http://studionumbersix.com/foo/lv2/yc20",
-  "symbol": "foo-yc20",
-  "bypass": true,
-  "gain": 20.0,
-  "x": 300,
-  "y": 200,
-  "controls": {
-    "volume": 1.0,
-    "bass_volume": 0.0,
-    "realism": 0.0,
-    "depth": 0.08,
-    "speed": 0.22,
-    "balance": 0.65,
-    "bright": 0.8,
-    "b_16": 0.0,
-    "b_8": 0.0,
-    "bass_manual": 0.0,
-    "i_16": 0.2,
-    "i_8": 1.0,
-    "i_4": 0.85,
-    "i_2_2p3": 0.3,
-    "i_2": 0.55,
-    "i_1_3p5": 0.15,
-    "i_1": 0.1,
-    "ii_16": 0.1,
-    "ii_8": 0.75,
-    "ii_4": 0.55,
-    "ii_2": 0.25,
-    "percussive": 0.2,
-    "pitch": 0.0
-  }
-},
-
-"26": {
+    "25": {
+      "uri": "http://studionumbersix.com/foo/lv2/yc20",
+      "symbol": "foo-yc20",
+      "bypass": true,
+      "gain": 20.0,
+      "x": 300,
+      "y": 200,
+      "controls": {
+        "volume": 1.0,
+        "bass_volume": 0.0,
+        "realism": 0.0,
+        "depth": 0.08,
+        "speed": 0.22,
+        "balance": 0.65,
+        "bright": 0.8,
+        "b_16": 0.0,
+        "b_8": 0.0,
+        "bass_manual": 0.0,
+        "i_16": 0.2,
+        "i_8": 1.0,
+        "i_4": 0.85,
+        "i_2_2p3": 0.3,
+        "i_2": 0.55,
+        "i_1_3p5": 0.15,
+        "i_1": 0.1,
+        "ii_16": 0.1,
+        "ii_8": 0.75,
+        "ii_4": 0.55,
+        "ii_2": 0.25,
+        "percussive": 0.2,
+        "pitch": 0.0
+      }
+    },
+    "26": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-caveman",
       "bypass": true,
@@ -254,52 +253,49 @@
         "volume": 1.0
       }
     },
-
-"27": {
-  "uri": "http://bristol.sourceforge.net/lv2/vox",
-  "symbol": "bristol-vox",
-  "bypass": true,
-  "gain": 3.5,
-  "x": 300,
-  "y": 20,
-"controls": {
-      "gain": 0.25
-     }
-},
-
-"28": {
-  "uri": "https://ho-ro.net/connie/lv2",
-  "symbol": "horo-connie",
-  "bypass": true,
-  "gain": 7.0,
-  "x": 300,
-  "y": 20,
-  "controls": {
-    "db_16": 0.75,
-    "db_8": 1.0,
-    "db_4": 0.75,
-    "db_iv": 1.0,
-    "db_flute": 1.0,
-    "db_reed": 0.5,
-    "db_sharp": 0.0,
-    "db_perc": 0.0,
-    "db_vibrato": 0.0,
-    "db_reverb": 0.5,
-    "master": 0.25,
-    "transpose": 0.5,
-    "preset": 0.0
-  },
-  "midi_cc": {
-    "5": "db_16",
-    "6": "db_8",
-    "7": "db_4",
-    "8": "db_iv",
-    "9": "db_flute",
-    "10": "db_reed"
-  }
-},
-
- "29": {
+    "27": {
+      "uri": "http://bristol.sourceforge.net/lv2/vox",
+      "symbol": "bristol-vox",
+      "bypass": true,
+      "gain": 3.5,
+      "x": 300,
+      "y": 20,
+      "controls": {
+        "gain": 0.25
+      }
+    },
+    "28": {
+      "uri": "https://ho-ro.net/connie/lv2",
+      "symbol": "horo-connie",
+      "bypass": true,
+      "gain": 7.0,
+      "x": 300,
+      "y": 20,
+      "controls": {
+        "db_16": 0.75,
+        "db_8": 1.0,
+        "db_4": 0.75,
+        "db_iv": 1.0,
+        "db_flute": 1.0,
+        "db_reed": 0.5,
+        "db_sharp": 0.0,
+        "db_perc": 0.0,
+        "db_vibrato": 0.0,
+        "db_reverb": 0.5,
+        "master": 0.25,
+        "transpose": 0.5,
+        "preset": 0.0
+      },
+      "midi_cc": {
+        "5": "db_16",
+        "6": "db_8",
+        "7": "db_4",
+        "8": "db_iv",
+        "9": "db_flute",
+        "10": "db_reed"
+      }
+    },
+    "29": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sfizz-lutheal",
       "bypass": true,
@@ -313,10 +309,9 @@
         "volume": 0.0
       }
     },
-
     "30": {
       "uri": "https://github.com/brummer10/Fluida.lv2",
-      "symbol": "sf2-westcoast-guitar",
+      "symbol": "sf2-dance-organs",
       "bypass": true,
       "gain": 10.0,
       "x": 100,
@@ -327,8 +322,7 @@
         "https://github.com/brummer10/Fluida.lv2#soundfont": "/usr/local/share/sf2/organs/Dance Organs.sf2"
       }
     },
-
-     "35": {
+    "35": {
       "uri": "http://calf.sourceforge.net/plugins/StereoTools",
       "symbol": "stereotools",
       "bypass": false,
@@ -337,43 +331,43 @@
       "controls": {
         "mode": 5.0
       }
-     },
-     "50": {
+    },
+    "50": {
       "uri": "http://guitarix.sourceforge.net/plugins/gx_switchless_wah#wah",
       "symbol": "wah-left",
       "bypass": true,
       "x": 350,
       "y": 200
-     },
-     "51": {
+    },
+    "51": {
       "uri": "http://guitarix.sourceforge.net/plugins/gx_switchless_wah#wah",
       "symbol": "wah-right",
       "bypass": true,
       "x": 350,
       "y": 200
-     },
-     "37": {
+    },
+    "37": {
       "uri": "http://calf.sourceforge.net/plugins/Saturator",
       "symbol": "saturator",
       "bypass": true,
       "x": 350,
       "y": 200
     },
-     "38": {
+    "38": {
       "uri": "http://lsp-plug.in/plugins/lv2/para_equalizer_x16_stereo",
       "symbol": "eq",
       "bypass": true,
       "x": 350,
       "y": 200
     },
-     "39": {
+    "39": {
       "uri": "http://calf.sourceforge.net/plugins/Compressor",
       "symbol": "compressor",
       "bypass": true,
       "x": 350,
       "y": 200
     },
-     "40": {
+    "40": {
       "uri": "http://calf.sourceforge.net/plugins/Pulsator",
       "symbol": "pulsator",
       "bypass": true,
@@ -409,7 +403,6 @@
       "x": 850,
       "y": 200
     }
-
   },
   "connections": [
     {
@@ -440,85 +433,86 @@
       "from": "system:midi_capture_1",
       "to": "16:control"
     },
-    { 
+    {
       "from": "system:midi_capture_1",
       "to": "17:control"
     },
-     {
+    {
       "from": "system:midi_capture_1",
       "to": "18:control"
     },
-     {
+    {
       "from": "system:midi_capture_1",
       "to": "19:control"
     },
-     {
+    {
       "from": "system:midi_capture_1",
       "to": "20:control"
     },
-     {
+    {
       "from": "system:midi_capture_1",
       "to": "21:control"
     },
-     {
+    {
       "from": "system:midi_capture_1",
       "to": "22:control"
     },
-     {
+    {
       "from": "system:midi_capture_1",
       "to": "24:control"
     },
-  {
+    {
       "from": "system:midi_capture_1",
       "to": "26:control"
     },
-  {
+    {
       "from": "system:midi_capture_1",
       "to": "27:midi_in"
     },
-  {
+    {
       "from": "system:midi_capture_1",
       "to": "28:midi"
     },
-   {                                                                                                                        "from": "system:midi_capture_1",                                                                                        "to": "29:control"
-    },   
-    {  
+    {
+      "from": "system:midi_capture_1",
+      "to": "29:control"
+    },
+    {
       "from": "system:midi_capture_1",
       "to": "23:MIDI_IN"
     },
     {
-         "from": "23:out",
-         "to": "35:in_l"
-       },
-        {
-         "from": "23:out1",
-         "to": "35:in_r"
-       },  
- {
+      "from": "23:out",
+      "to": "35:in_l"
+    },
+    {
+      "from": "23:out1",
+      "to": "35:in_r"
+    },
+    {
       "from": "system:midi_capture_1",
       "to": "30:MIDI_IN"
     },
     {
-         "from": "30:out",
-         "to": "35:in_l"
-       },
-        {
-         "from": "30:out1",
-         "to": "35:in_r"
-       },
-
-     {
-   "from": "system:midi_capture_1",
-   "to": "25:midi"
+      "from": "30:out",
+      "to": "35:in_l"
     },
-  {
-    "from": "25:output_L",
-     "to": "35:in_l"
-   },
-   {                                                                                                                      
-  "from": "25:output_R",            
-   "to": "35:in_r"
-   },
+    {
+      "from": "30:out1",
+      "to": "35:in_r"
+    },
+    {
+      "from": "system:midi_capture_1",
+      "to": "25:midi"
+    },
+    {
+      "from": "25:output_L",
+      "to": "35:in_l"
+    },
+    {
+      "from": "25:output_R",
+      "to": "35:in_r"
+    },
     {
       "from": "10:out_left",
       "to": "35:in_l"
@@ -530,7 +524,7 @@
     {
       "from": "11:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "11:out_right",
       "to": "35:in_r"
@@ -538,7 +532,7 @@
     {
       "from": "12:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "12:out_right",
       "to": "35:in_r"
@@ -546,7 +540,7 @@
     {
       "from": "13:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "13:out_right",
       "to": "35:in_r"
@@ -554,7 +548,7 @@
     {
       "from": "14:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "14:out_right",
       "to": "35:in_r"
@@ -562,7 +556,7 @@
     {
       "from": "15:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "15:out_right",
       "to": "35:in_r"
@@ -570,20 +564,20 @@
     {
       "from": "16:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "16:out_right",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "17:out_left",
       "to": "35:in_l"
     },
-     {
+    {
       "from": "17:out_left",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "18:out_left",
       "to": "35:in_l"
     },
@@ -591,7 +585,7 @@
       "from": "18:out_right",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "19:out_left",
       "to": "35:in_l"
     },
@@ -599,7 +593,7 @@
       "from": "19:out_right",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "20:out_left",
       "to": "35:in_l"
     },
@@ -607,7 +601,7 @@
       "from": "20:out_right",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "21:out_left",
       "to": "35:in_l"
     },
@@ -615,7 +609,7 @@
       "from": "21:out_right",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "22:out_left",
       "to": "35:in_l"
     },
@@ -623,7 +617,7 @@
       "from": "22:out_right",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "24:out_left",
       "to": "35:in_l"
     },
@@ -631,7 +625,7 @@
       "from": "24:out_right",
       "to": "35:in_r"
     },
- {
+    {
       "from": "26:out_left",
       "to": "35:in_l"
     },
@@ -639,7 +633,7 @@
       "from": "26:out_right",
       "to": "35:in_r"
     },
- {
+    {
       "from": "27:audio_l",
       "to": "35:in_l"
     },
@@ -647,7 +641,7 @@
       "from": "27:audio_r",
       "to": "35:in_r"
     },
- {
+    {
       "from": "28:output_L",
       "to": "35:in_l"
     },
@@ -663,7 +657,6 @@
       "from": "29:out_right",
       "to": "35:in_r"
     },
-
     {
       "from": "35:out_l",
       "to": "50:in"
@@ -680,11 +673,11 @@
       "from": "51:out",
       "to": "37:in_r"
     },
-    { 
+    {
       "from": "37:out_l",
       "to": "38:in_l"
     },
-    { 
+    {
       "from": "37:out_r",
       "to": "38:in_r"
     },
@@ -720,7 +713,7 @@
       "from": "41:out_r",
       "to": "42:in_r"
     },
-    { 
+    {
       "from": "42:out_l",
       "to": "43:In1"
     },
@@ -728,7 +721,7 @@
       "from": "42:out_r",
       "to": "43:In2"
     },
-    { 
+    {
       "from": "43:Out1",
       "to": "44:in_l"
     },

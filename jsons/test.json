@@ -75,28 +75,28 @@
         "http://sfztools.github.io/sfizz:sfzfile": "/usr/local/share/sfz/epianos/JRhodes3d-st-no-xfade/jRhodes3d-st-no-xfade.sfz"
       }
     },
-     "37": {
+    "37": {
       "uri": "http://calf.sourceforge.net/plugins/Saturator",
       "symbol": "saturator",
       "bypass": true,
       "x": 350,
       "y": 200
     },
-     "38": {
+    "38": {
       "uri": "http://lsp-plug.in/plugins/lv2/para_equalizer_x16_stereo",
       "symbol": "eq",
       "bypass": true,
       "x": 350,
       "y": 200
     },
-     "39": {
+    "39": {
       "uri": "http://calf.sourceforge.net/plugins/Compressor",
       "symbol": "compressor",
       "bypass": true,
       "x": 350,
       "y": 200
     },
-     "40": {
+    "40": {
       "uri": "http://calf.sourceforge.net/plugins/Pulsator",
       "symbol": "pulsator",
       "bypass": true,
@@ -132,7 +132,6 @@
       "x": 850,
       "y": 200
     }
-
   },
   "connections": [
     {
@@ -219,11 +218,11 @@
       "from": "16:out_right",
       "to": "37:in_r"
     },
-    { 
+    {
       "from": "37:out_l",
       "to": "38:in_l"
     },
-    { 
+    {
       "from": "37:out_r",
       "to": "38:in_r"
     },
@@ -267,7 +266,7 @@
       "from": "42:out_r",
       "to": "43:In2"
     },
-    { 
+    {
       "from": "43:Out1",
       "to": "44:in_l"
     },

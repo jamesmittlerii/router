@@ -96,7 +96,7 @@
         "volume": -10.0
       }
     },
-       "17": {
+    "17": {
       "uri": "http://sfztools.github.io/sfizz",
       "symbol": "sf2-electricv-le",
       "bypass": true,
@@ -168,8 +168,7 @@
         "volume": 6.0
       }
     },
-
-     "35": {
+    "35": {
       "uri": "http://calf.sourceforge.net/plugins/StereoTools",
       "symbol": "stereotools",
       "bypass": false,
@@ -178,43 +177,43 @@
       "controls": {
         "mode": 5.0
       }
-     },
-     "50": {
+    },
+    "50": {
       "uri": "http://guitarix.sourceforge.net/plugins/gx_switchless_wah#wah",
       "symbol": "wah-left",
       "bypass": true,
       "x": 350,
       "y": 200
-     },
-     "51": {
+    },
+    "51": {
       "uri": "http://guitarix.sourceforge.net/plugins/gx_switchless_wah#wah",
       "symbol": "wah-right",
       "bypass": true,
       "x": 350,
       "y": 200
-     },
-     "37": {
+    },
+    "37": {
       "uri": "http://calf.sourceforge.net/plugins/Saturator",
       "symbol": "saturator",
       "bypass": true,
       "x": 350,
       "y": 200
     },
-     "38": {
+    "38": {
       "uri": "http://lsp-plug.in/plugins/lv2/para_equalizer_x16_stereo",
       "symbol": "eq",
       "bypass": true,
       "x": 350,
       "y": 200
     },
-     "39": {
+    "39": {
       "uri": "http://calf.sourceforge.net/plugins/Compressor",
       "symbol": "compressor",
       "bypass": true,
       "x": 350,
       "y": 200
     },
-     "40": {
+    "40": {
       "uri": "http://calf.sourceforge.net/plugins/Pulsator",
       "symbol": "pulsator",
       "bypass": true,
@@ -250,7 +249,6 @@
       "x": 850,
       "y": 200
     }
-
   },
   "connections": [
     {
@@ -281,27 +279,27 @@
       "from": "system:midi_capture_1",
       "to": "16:control"
     },
-    { 
+    {
       "from": "system:midi_capture_1",
       "to": "17:control"
     },
-     {
+    {
       "from": "system:midi_capture_1",
       "to": "18:control"
     },
-     {
+    {
       "from": "system:midi_capture_1",
       "to": "19:control"
     },
-     {
+    {
       "from": "system:midi_capture_1",
       "to": "20:control"
     },
-     {
+    {
       "from": "system:midi_capture_1",
       "to": "21:control"
     },
-     {
+    {
       "from": "system:midi_capture_1",
       "to": "22:control"
     },
@@ -316,7 +314,7 @@
     {
       "from": "11:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "11:out_right",
       "to": "35:in_r"
@@ -324,7 +322,7 @@
     {
       "from": "12:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "12:out_right",
       "to": "35:in_r"
@@ -332,7 +330,7 @@
     {
       "from": "13:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "13:out_right",
       "to": "35:in_r"
@@ -340,7 +338,7 @@
     {
       "from": "14:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "14:out_right",
       "to": "35:in_r"
@@ -348,7 +346,7 @@
     {
       "from": "15:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "15:out_right",
       "to": "35:in_r"
@@ -356,20 +354,20 @@
     {
       "from": "16:out_left",
       "to": "35:in_l"
-    }, 
+    },
     {
       "from": "16:out_right",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "17:out_left",
       "to": "35:in_l"
     },
-     {
+    {
       "from": "17:out_left",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "18:out_left",
       "to": "35:in_l"
     },
@@ -377,7 +375,7 @@
       "from": "18:out_right",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "19:out_left",
       "to": "35:in_l"
     },
@@ -385,7 +383,7 @@
       "from": "19:out_right",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "20:out_left",
       "to": "35:in_l"
     },
@@ -393,7 +391,7 @@
       "from": "20:out_right",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "21:out_left",
       "to": "35:in_l"
     },
@@ -401,7 +399,7 @@
       "from": "21:out_right",
       "to": "35:in_r"
     },
-     {
+    {
       "from": "22:out_left",
       "to": "35:in_l"
     },
@@ -425,11 +423,11 @@
       "from": "51:out",
       "to": "37:in_r"
     },
-    { 
+    {
       "from": "37:out_l",
       "to": "38:in_l"
     },
-    { 
+    {
       "from": "37:out_r",
       "to": "38:in_r"
     },
@@ -465,7 +463,7 @@
       "from": "41:out_r",
       "to": "42:in_r"
     },
-    { 
+    {
       "from": "42:out_l",
       "to": "43:In1"
     },
@@ -473,7 +471,7 @@
       "from": "42:out_r",
       "to": "43:In2"
     },
-    { 
+    {
       "from": "43:Out1",
       "to": "44:in_l"
     },
