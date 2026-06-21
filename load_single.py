@@ -34,7 +34,11 @@ from typing import Any, Callable, Optional
 import jack
 import mido
 
-from lcxl3 import build_custom_mode_messages, build_global_channel_midi_messages, parse_lcxl_layout
+from lcxl3 import (
+    build_custom_mode_messages,
+    build_global_channel_midi_messages,
+    resolve_lcxl_cc_lists,
+)
 
 # ---- Configuration ----
 
@@ -946,10 +950,6 @@ def configure_lcxl_for_plugin(
     if not isinstance(plugin, dict):
         return
 
-    layout = parse_lcxl_layout(plugin.get("lcxl"))
-    if layout is None:
-        return
-
     symbol = plugin.get("symbol") or str(instance)
     name = str(symbol)[:14]
     labels: dict[int, str] = {}
@@ -966,12 +966,14 @@ def configure_lcxl_for_plugin(
                     labels[cc_num] = str(label)
             elif isinstance(entry, str):
                 labels[cc_num] = entry
-    flat_encoders = [cc for row in layout["encoders"] for cc in row]
+
+    faders, flat_encoders, buttons = resolve_lcxl_cc_lists(plugin.get("lcxl"))
+
     messages = build_custom_mode_messages(
         name,
-        faders=layout["faders"],
+        faders=faders,
         encoders=flat_encoders,
-        buttons=layout.get("buttons") or [],
+        buttons=buttons,
         channel=COMMON_CHANNEL,
         slot=LCXL_CUSTOM_MODE_SLOT,
         labels=labels,

@@ -28,6 +28,17 @@ _ENCODER_ROW_TAG = (0x05, 0x09, 0x0D)
 LIVE_CUSTOM_MODE_SLOT = 0x7F
 SLOT_SELECT_HEADER = bytes([0xF0, 0x00, 0x20, 0x29, 0x02, 0x77])
 
+# Factory Custom Mode 1 layout (Novation Components blank template / classic LCXL).
+DEFAULT_FADER_CCS: tuple[int, ...] = tuple(range(13, 21))
+DEFAULT_ENCODER_ROW_CCS: tuple[tuple[int, ...], ...] = (
+    tuple(range(21, 29)),
+    tuple(range(41, 49)),
+    tuple(range(57, 65)),
+)
+DEFAULT_ENCODER_CCS: tuple[int, ...] = tuple(
+    cc for row in DEFAULT_ENCODER_ROW_CCS for cc in row
+)
+
 # Feature-control port uses MIDI channel 7 (CC) and 16 (Note) per Novation docs.
 _DAW_FEATURE_CC_MIDO_CHANNEL = 6
 _DAW_FEATURE_NOTE_MIDO_CHANNEL = 15
@@ -263,14 +274,12 @@ def build_custom_mode_messages(
     short_name = name[:14]
     messages: list[bytes] = []
     has_fader_content = bool(faders) or any(cc is not None for cc in (buttons or []))
-    # Page 0 carries the custom-mode name shown on the hardware; send it even when
-    # this instrument only maps faders/buttons (e.g. Connie drawbars).
-    if encoders or has_fader_content:
-        messages.append(
-            build_encoder_page_sysex(
-                short_name, encoders, labels=labels, channel=channel, slot=slot
-            )
+    # Page 0 carries the custom-mode name on the LCD; always send it on instrument change.
+    messages.append(
+        build_encoder_page_sysex(
+            short_name, encoders, labels=labels, channel=channel, slot=slot
         )
+    )
     if has_fader_content:
         messages.append(
             build_fader_button_page_sysex(
@@ -283,6 +292,33 @@ def build_custom_mode_messages(
             )
         )
     return messages
+
+
+def default_lcxl_cc_lists() -> tuple[list[int], list[int], list[int | None]]:
+    """Faders, flat encoders, and buttons for the factory Custom Mode 1 CC map."""
+    return list(DEFAULT_FADER_CCS), list(DEFAULT_ENCODER_CCS), []
+
+
+def resolve_lcxl_cc_lists(
+    raw: object,
+) -> tuple[list[int], list[int], list[int | None]]:
+    """
+    Resolve fader/encoder/button CC lists for upload.
+
+    Missing ``lcxl`` section -> full factory defaults. Partial sections (e.g.
+    faders only) fill unspecified control groups from the same defaults.
+    """
+    layout = parse_lcxl_layout(raw)
+    if layout is None:
+        return default_lcxl_cc_lists()
+
+    default_faders, default_encoders, default_buttons = default_lcxl_cc_lists()
+    faders = layout["faders"] if layout["faders"] else list(default_faders)
+    flat_encoders = [cc for row in layout["encoders"] for cc in row]
+    if not flat_encoders:
+        flat_encoders = list(default_encoders)
+    buttons = layout["buttons"] if layout["buttons"] else list(default_buttons)
+    return faders, flat_encoders, buttons
 
 
 def parse_lcxl_layout(raw: object) -> dict[str, list[int | None]] | None:
