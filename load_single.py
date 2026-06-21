@@ -494,6 +494,26 @@ def load_router_state() -> tuple[Optional[int], dict[str, dict[str, float]]]:
     return restored, plugin_controls
 
 
+def normalize_restored_piano(
+    restored: Any, piano_ids: list[int]
+) -> Optional[int]:
+    """Validate/coerce saved active piano against the current pedalboard."""
+    if restored is None:
+        return None
+    try:
+        inst = int(restored)
+    except (TypeError, ValueError):
+        print(f"[State] Warning: invalid last_active_piano {restored!r}, ignoring")
+        return None
+    if inst not in piano_ids:
+        print(
+            f"[State] Warning: last_active_piano {inst} not in current"
+            f" pedalboard pianos {sorted(piano_ids)}, ignoring"
+        )
+        return None
+    return inst
+
+
 def merge_saved_plugin_controls(
     applied_params: dict[tuple[int, str], float],
     saved_controls: dict[str, Any],
@@ -984,6 +1004,8 @@ def main() -> None:
             except Exception as e:
                 print(f"Failed to add plugin {inst}: {e}")
 
+        restored_piano = normalize_restored_piano(restored_piano, piano_ids)
+
         if restored_piano is not None:
             print(f"[State] Restored last active piano: {restored_piano}")
         for inst, symbol, fval in restored_cc:
@@ -1034,6 +1056,14 @@ def main() -> None:
                     print(f"Failed bypass {inst}: {e}")
 
         cc_pickup = init_cc_pickup(cc_map, applied_params)
+
+        if active_piano is not None:
+            print(f"[Startup] Active piano: {active_piano}")
+        else:
+            print(
+                "[Startup] Warning: No active piano (all pianos bypassed)."
+                " Send a Program Change to select one."
+            )
 
         if output_gain_instance is not None and active_piano is not None:
             startup_gain = program_gains.get(active_piano, output_gain_default)
@@ -1147,6 +1177,8 @@ def main() -> None:
 
             msg = decode_mido(data)
             if msg is None:
+                if data and len(data) >= 2 and (data[0] & 0xF0) == 0xC0:
+                    print(f"[MIDI] Warning: undecodable program change: {data.hex()}")
                 continue
 
             if handle_fluida_preset_cc(
