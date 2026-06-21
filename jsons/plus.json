@@ -314,6 +314,20 @@
       }
     },
 
+    "30": {
+      "uri": "https://github.com/brummer10/Fluida.lv2",
+      "symbol": "sf2-westcoast-guitar",
+      "bypass": true,
+      "gain": 10.0,
+      "x": 100,
+      "y": 200,
+      "preset": 28,
+      "bank": 0,
+      "state": {
+        "https://github.com/brummer10/Fluida.lv2#soundfont": "/usr/local/share/sf2/organs/Dance Organs.sf2"
+      }
+    },
+
      "35": {
       "uri": "http://calf.sourceforge.net/plugins/StereoTools",
       "symbol": "stereotools",
@@ -480,6 +494,18 @@
          "from": "23:out1",
          "to": "35:in_r"
        },  
+ {
+      "from": "system:midi_capture_1",
+      "to": "30:MIDI_IN"
+    },
+    {
+         "from": "30:out",
+         "to": "35:in_l"
+       },
+        {
+         "from": "30:out1",
+         "to": "35:in_r"
+       },
 
      {
    "from": "system:midi_capture_1",
