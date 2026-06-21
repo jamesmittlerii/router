@@ -40,6 +40,8 @@ MOD_HOST = os.environ.get("MOD_HOST", "127.0.0.1")
 MOD_PORT = int(os.environ.get("MOD_PORT", "5555"))
 TIMEOUT_S = float(os.environ.get("MOD_TIMEOUT", "5.0"))
 COMMON_CHANNEL = 2  # User confirmed Channel 2
+FLUIDA_URI = "https://github.com/brummer10/Fluida.lv2"
+FLUIDA_PRESET_CHANNEL = int(os.environ.get("FLUIDA_PRESET_CHANNEL", "1"))  # 1-16, note channel
 KILL_PC = 50 # set this to a PC to force a shutdown
 OUTPUT_GAIN_URI = "http://moddevices.com/plugins/mod-devel/Gain2x2"
 OUTPUT_GAIN_PARAM = "Gain"
@@ -235,6 +237,56 @@ def get_plugin_gain(p: dict[str, Any], fallback: float) -> float:
         return float(raw)
     except (TypeError, ValueError):
         return fallback
+
+
+@dataclass(frozen=True)
+class FluidaPresetConfig:
+    preset: int
+    bank_msb: int = 0
+    bank_lsb: int = 0
+
+
+def parse_fluida_preset(p: dict[str, Any]) -> Optional[FluidaPresetConfig]:
+    """Read optional preset/bank for Fluida SF2 preset selection."""
+    if "preset" not in p:
+        return None
+    try:
+        preset = int(p["preset"])
+    except (TypeError, ValueError):
+        print(f"[Fluida] Warning: invalid preset value {p.get('preset')!r}, ignoring")
+        return None
+    preset = max(0, min(127, preset))
+    bank_msb = 0
+    bank_lsb = 0
+    if "bank" in p:
+        try:
+            bank_msb = max(0, min(127, int(p["bank"])))
+        except (TypeError, ValueError):
+            print(f"[Fluida] Warning: invalid bank value {p.get('bank')!r}, using 0")
+    if "bank_lsb" in p:
+        try:
+            bank_lsb = max(0, min(127, int(p["bank_lsb"])))
+        except (TypeError, ValueError):
+            print(f"[Fluida] Warning: invalid bank_lsb value {p.get('bank_lsb')!r}, using 0")
+    return FluidaPresetConfig(preset=preset, bank_msb=bank_msb, bank_lsb=bank_lsb)
+
+
+def build_fluida_preset_messages(
+    config: FluidaPresetConfig,
+    *,
+    channel: int,
+) -> list[bytes]:
+    """Bank select (CC 0/32) + program change for Fluida preset selection."""
+    ch = channel & 0x0F
+    return [
+        bytes([0xB0 | ch, 0, config.bank_msb]),
+        bytes([0xB0 | ch, 32, config.bank_lsb]),
+        bytes([0xC0 | ch, config.preset]),
+    ]
+
+
+def fluida_midi_in_port(instance: int) -> str:
+    return expand_port(f"{instance}:MIDI_IN")
 
 
 def expand_port(port: str) -> str:
@@ -508,10 +560,11 @@ JACK_OPEN_RETRY_DELAY_S = 0.5
 
 event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)  # Program Change (SL88)
 cc_event_q: "queue.Queue[bytes]" = queue.Queue(maxsize=2048)  # Control Change (LCXL3)
-send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=128)   # Outgoing
+send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=128)   # Outgoing (SL88 sync)
+fluida_send_q: "queue.Queue[bytes]" = queue.Queue(maxsize=128)  # Outgoing (Fluida preset)
 
 
-def create_jack_client() -> tuple[jack.Client, jack.Port, jack.Port, jack.Port]:
+def create_jack_client() -> tuple[jack.Client, jack.Port, jack.Port, jack.Port, jack.Port]:
     """Open the router JACK MIDI client (retries if a stale client name lingers)."""
     last_err: Optional[Exception] = None
     for attempt in range(1, JACK_OPEN_RETRIES + 1):
@@ -520,9 +573,10 @@ def create_jack_client() -> tuple[jack.Client, jack.Port, jack.Port, jack.Port]:
             inp = c.midi_inports.register("input")
             cc_inp = c.midi_inports.register("cc_input")
             outp = c.midi_outports.register("output")
+            preset_outp = c.midi_outports.register("preset_out")
 
             @c.set_process_callback
-            def process(frames, _inp=inp, _cc_inp=cc_inp, _outp=outp):
+            def process(frames, _inp=inp, _cc_inp=cc_inp, _outp=outp, _preset_outp=preset_outp):
                 for offset, data in _inp.incoming_midi_events():
                     try:
                         event_q.put_nowait(bytes(data))
@@ -543,7 +597,15 @@ def create_jack_client() -> tuple[jack.Client, jack.Port, jack.Port, jack.Port]:
                     except queue.Empty:
                         break
 
-            return c, inp, cc_inp, outp
+                _preset_outp.clear_buffer()
+                while True:
+                    try:
+                        msg = fluida_send_q.get_nowait()
+                        _preset_outp.write_midi_event(0, msg)
+                    except queue.Empty:
+                        break
+
+            return c, inp, cc_inp, outp, preset_outp
         except jack.JackOpenError as exc:
             last_err = exc
             if attempt < JACK_OPEN_RETRIES:
@@ -564,6 +626,49 @@ def decode_mido(event_bytes: bytes):
         return mido.Message.from_bytes(event_bytes)
     except ValueError:
         return None
+
+
+def send_fluida_preset(
+    jack_client: jack.Client,
+    preset_out: jack.Port,
+    instance: int,
+    config: FluidaPresetConfig,
+    jack_midi_connections: list[tuple[jack.Port, jack.Port]],
+    *,
+    channel: int = FLUIDA_PRESET_CHANNEL,
+) -> None:
+    """Connect preset_out to Fluida MIDI_IN and queue bank select + program change."""
+    dest_name = fluida_midi_in_port(instance)
+    dest = jack_client.get_port_by_name(dest_name)
+    if dest is None:
+        print(f"[Fluida] Warning: port '{dest_name}' not found; preset not sent")
+        return
+
+    for src, dst in reversed(jack_midi_connections):
+        if src is preset_out:
+            try:
+                jack_client.disconnect(src, dst)
+                jack_midi_connections.remove((src, dst))
+            except jack.JackError as e:
+                print(f"[Fluida] Failed to disconnect {src.name}->{dst.name}: {e}")
+
+    try:
+        jack_client.connect(preset_out, dest)
+        jack_midi_connections.append((preset_out, dest))
+    except jack.JackError as e:
+        print(f"[Fluida] Failed to connect {preset_out.name} -> {dest_name}: {e}")
+        return
+
+    mido_ch = channel - 1
+    for msg_bytes in build_fluida_preset_messages(config, channel=mido_ch):
+        fluida_send_q.put(msg_bytes)
+    bank_note = f", bank MSB={config.bank_msb}" if config.bank_msb else ""
+    if config.bank_lsb:
+        bank_note += f" LSB={config.bank_lsb}"
+    print(
+        f"[Fluida] Queued preset {config.preset}{bank_note}"
+        f" on ch{channel} -> instance {instance}"
+    )
 
 
 def connect_jack_midi_source(
@@ -757,6 +862,7 @@ def main() -> None:
     piano_ids = []
     active_piano = None
     program_gains: dict[int, float] = {}
+    fluida_presets: dict[int, FluidaPresetConfig] = {}
     output_gain_instance: Optional[int] = None
     output_gain_default = 0.0
 
@@ -768,6 +874,28 @@ def main() -> None:
     in_port: Optional[jack.Port] = None
     cc_in_port: Optional[jack.Port] = None
     out_port: Optional[jack.Port] = None
+    preset_out_port: Optional[jack.Port] = None
+
+    def maybe_send_fluida_preset(instance: int) -> None:
+        if jack_client is None or preset_out_port is None:
+            return
+        config = fluida_presets.get(instance)
+        if config is None:
+            for src, dst in reversed(jack_midi_connections):
+                if src is preset_out_port:
+                    try:
+                        jack_client.disconnect(src, dst)
+                        jack_midi_connections.remove((src, dst))
+                    except jack.JackError:
+                        pass
+            return
+        send_fluida_preset(
+            jack_client,
+            preset_out_port,
+            instance,
+            config,
+            jack_midi_connections,
+        )
 
     def persist_state(force: bool = False) -> None:
         save_router_state(active_piano, applied_params, cc_map, force=force)
@@ -775,7 +903,7 @@ def main() -> None:
     try:
         sweep_stale_plugins(plugin_ids)
 
-        jack_client, in_port, cc_in_port, out_port = create_jack_client()
+        jack_client, in_port, cc_in_port, out_port, preset_out_port = create_jack_client()
         print(f"Opened JACK client: {jack_client.name}")
 
         for sid, plugin in plugins.items():
@@ -799,13 +927,18 @@ def main() -> None:
             inst = int(sid)
             if uri in (
                "http://sfztools.github.io/sfizz",
-               "https://github.com/brummer10/Fluida.lv2",
+               FLUIDA_URI,
                "http://studionumbersix.com/foo/lv2/yc20",
                "http://bristol.sourceforge.net/lv2/vox",
                "https://ho-ro.net/connie/lv2",
             ):
                 piano_ids.append(inst)
                 program_gains[inst] = get_plugin_gain(p, output_gain_default)
+
+            if uri == FLUIDA_URI:
+                preset_cfg = parse_fluida_preset(p)
+                if preset_cfg is not None:
+                    fluida_presets[inst] = preset_cfg
 
             print(f'== add {inst} {uri}')
             try:
@@ -919,6 +1052,8 @@ def main() -> None:
                 except Exception as e:
                     print(f"[SL88 Sync] Failed: {e}")
 
+            maybe_send_fluida_preset(active_piano)
+
         print("Starting JACK MIDI listener for Program Changes...")
         print(f"Listening on: {jack_client.name}:input")
         connect_jack_midi_source(jack_client, TARGET_PORT, in_port, jack_midi_connections)
@@ -1022,6 +1157,7 @@ def main() -> None:
                         print(f"   Failed output gain set for {prog}: {e}")
 
                 active_piano = prog
+                maybe_send_fluida_preset(prog)
                 try:
                     persist_state(force=True)
                     print(f"   [State] Saved active piano {prog} to {STATE_FILE}")
