@@ -226,15 +226,31 @@ export LV2_PATH="$HOME/.lv2${LV2_PATH:+:$LV2_PATH}"
 mod-host -n
 ```
 
-In a third UCRT64 shell, create the router virtualenv if it does not already exist, activate it, install the Python packages, and load the Windows pedalboard. Use MSYS2's packaged `cffi` and `packaging`; pip currently tries to compile `cffi` on UCRT64/Python 3.14 and can fail. If you already created `.venv` without `--system-site-packages`, remove and recreate it.
+In a third UCRT64 shell, set up Python from the router checkout. Use MSYS2's packaged `cffi` and `packaging`; pip currently tries to compile `cffi` on UCRT64/Python 3.14 and can fail. The virtualenv is created with `--system-site-packages` so those UCRT64 packages are visible inside `.venv`.
+
+First-time setup:
 
 ```bash
 cd /c/Users/chica/git/router
 pacman -S --needed mingw-w64-ucrt-x86_64-python-cffi mingw-w64-ucrt-x86_64-python-packaging
-rm -rf .venv
 python -m venv --system-site-packages .venv
 source .venv/bin/activate
 python -m pip install --no-deps JACK-Client mido
+```
+
+If `.venv` already exists and was created without `--system-site-packages`, remove it and recreate it with the commands above.
+
+For later runs, activate the venv from UCRT64/bash with:
+
+```bash
+source .venv/bin/activate
+```
+
+This UCRT64 venv uses `.venv/bin`, not `.venv/Scripts`.
+
+Then load the Windows pedalboard:
+
+```bash
 python load_single.py --no-midi-connect jsons/windows.json
 ```
 
