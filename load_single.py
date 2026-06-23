@@ -1351,7 +1351,7 @@ class MidiListenerState:
     last_fluida_preset_cc: dict[int, int] = field(default_factory=dict)
 
 
-def load_pedalboard_from_argv() -> tuple[dict[str, Any], bool]:
+def load_pedalboard_from_argv() -> tuple[dict[str, Any], bool, bool]:
     parser = argparse.ArgumentParser(
         description="Load a pedalboard.json into mod-host."
     )
@@ -1363,12 +1363,21 @@ def load_pedalboard_from_argv() -> tuple[dict[str, Any], bool]:
             "The loader will keep running with MIDI wiring left manual."
         ),
     )
+    parser.add_argument(
+        "--skip-state",
+        action="store_true",
+        help="Do not load the saved router state from ROUTER_STATE for this run.",
+    )
     parser.add_argument("pedalboard_json", help="Path to pedalboard.json")
     args = parser.parse_args()
 
     pb_path = Path(args.pedalboard_json)
     try:
-        return json.loads(pb_path.read_text(encoding="utf-8")), args.no_midi_connect
+        return (
+            json.loads(pb_path.read_text(encoding="utf-8")),
+            args.no_midi_connect,
+            args.skip_state,
+        )
     except FileNotFoundError:
         print(f"Error: File not found: {pb_path}")
         sys.exit(1)
@@ -1377,12 +1386,18 @@ def load_pedalboard_from_argv() -> tuple[dict[str, Any], bool]:
         sys.exit(1)
 
 
-def init_router_session(pb: dict[str, Any]) -> tuple[RouterSession, list[tuple[int, str, float]]]:
+def init_router_session(
+    pb: dict[str, Any], *, skip_state: bool = False
+) -> tuple[RouterSession, list[tuple[int, str, float]]]:
     plugins: dict[str, Any] = pb.get("plugins", {})
     connections: list[dict[str, str]] = pb.get("connections", [])
     cc_map = build_cc_map(plugins)
     applied_params = seed_applied_params(plugins)
-    restored_piano, saved_plugin_controls = load_router_state()
+    if skip_state:
+        print("[State] Skipping saved router state")
+        restored_piano, saved_plugin_controls = None, {}
+    else:
+        restored_piano, saved_plugin_controls = load_router_state()
     restored_cc = merge_saved_plugin_controls(
         applied_params, saved_plugin_controls, cc_map
     )
@@ -1984,8 +1999,8 @@ def run_loader_session(
 
 
 def main() -> None:
-    pb, no_midi_connect = load_pedalboard_from_argv()
-    session, restored_cc = init_router_session(pb)
+    pb, no_midi_connect, skip_state = load_pedalboard_from_argv()
+    session, restored_cc = init_router_session(pb, skip_state=skip_state)
     session.no_midi_connect = no_midi_connect
 
     print("== Loading Plugins == ")

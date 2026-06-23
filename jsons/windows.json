@@ -5,8 +5,7 @@
   "width": 1200,
   "height": 600,
   "plugins": {
-
-     "27": {
+    "27": {
       "uri": "http://bristol.sourceforge.net/lv2/vox",
       "symbol": "bristol-vox",
       "bypass": true,
@@ -17,7 +16,6 @@
         "gain": 0.25
       }
     },
-   
     "25": {
       "uri": "http://studionumbersix.com/foo/lv2/yc20",
       "symbol": "foo-yc20",
@@ -51,11 +49,10 @@
         "pitch": 0.0
       }
     },
-
-     "28": {
+    "28": {
       "uri": "https://ho-ro.net/connie/lv2",
       "symbol": "horo-connie",
-      "bypass": false,
+      "bypass": true,
       "gain": 7.0,
       "x": 300,
       "y": 20,
@@ -74,22 +71,37 @@
         "transpose": 0.5,
         "preset": 0.0
       }
+    },
+    "30": {
+      "uri": "https://github.com/brummer10/Fluida.lv2",
+      "symbol": "sf2-dance-organs",
+      "bypass": false,
+      "gain": 10.0,
+      "x": 100,
+      "y": 200,
+      "preset": 28,
+      "bank": 0,
+      "state": {
+        "https://github.com/brummer10/Fluida.lv2#soundfont": "e:\\Users\\chica\\Downloads\\Dance Organs.sf2"
+      }
     }
-  
   },
   "connections": [
-   
     {
       "from": "@alias:Minilab3 MIDI",
       "to": "25:midi"
     },
-     {
+    {
       "from": "@alias:Minilab3 MIDI",
       "to": "27:midi_in"
     },
     {
       "from": "@alias:Minilab3 MIDI",
       "to": "28:midi"
+    },
+    {
+      "from": "@alias:Minilab3 MIDI",
+      "to": "30:MIDI_IN"
     },
     {
       "from": "25:output_L",
@@ -99,7 +111,7 @@
       "from": "25:output_R",
       "to": "system:playback_2"
     },
-     {
+    {
       "from": "27:audio_l",
       "to": "system:playback_1"
     },
@@ -107,13 +119,21 @@
       "from": "27:audio_r",
       "to": "system:playback_2"
     },
-     {
+    {
       "from": "28:output_L",
       "to": "system:playback_1"
     },
     {
       "from": "28:output_R",
+      "to": "system:playback_2"
+    },
+    {
+      "from": "30:out",
       "to": "system:playback_1"
+    },
+    {
+      "from": "30:out1",
+      "to": "system:playback_2"
     }
   ]
 }
