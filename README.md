@@ -207,6 +207,39 @@ Shell scripts (`jalv_chain*.sh`, `vanilla.sh`, `teardown.sh`) exercise individua
 
 4. Play — use Program Change on the master keyboard to switch instruments. The loader debounces repeated PCs and saves the selection to `ROUTER_STATE`.
 
+## Windows UCRT64 startup
+
+Run this workflow from an **MSYS2 UCRT64** shell so JACK, mod-host, LV2 plugins, and Python all resolve from the same environment.
+
+Use a locally patched JACK build. If you want it installed system-wide in the UCRT64 prefix, deploy the patch through the local `MINGW-packages/mingw-w64-jack2` package and install that package with `pacman`; otherwise make sure the patched `jackd.exe` and JACK DLLs are first on `PATH`.
+
+Start JACK with the Windows WinMME MIDI backend and PortAudio audio backend:
+
+```bash
+jackd -S -X winmme -d portaudio -r 48000 -p 512
+```
+
+In another UCRT64 shell, add your user LV2 bundle directory to the LV2 search path, then start the local `mod-host.exe` without auto-connecting ports:
+
+```bash
+export LV2_PATH="$HOME/.lv2${LV2_PATH:+:$LV2_PATH}"
+mod-host -n
+```
+
+In a third UCRT64 shell, create the router virtualenv if it does not already exist, activate it, install the Python packages, and load the Windows pedalboard. Use MSYS2's packaged `cffi` and `packaging`; pip currently tries to compile `cffi` on UCRT64/Python 3.14 and can fail. If you already created `.venv` without `--system-site-packages`, remove and recreate it.
+
+```bash
+cd /c/Users/chica/git/router
+pacman -S --needed mingw-w64-ucrt-x86_64-python-cffi mingw-w64-ucrt-x86_64-python-packaging
+rm -rf .venv
+python -m venv --system-site-packages .venv
+source .venv/bin/activate
+python -m pip install --no-deps JACK-Client mido
+python load_single.py --no-midi-connect jsons/windows.json
+```
+
+The Windows JSON uses JACK's WinMME port names (`system_midi:capture_N`), and `--no-midi-connect` leaves the remaining MIDI wiring manual while the pedalboard is loaded.
+
 ## Design notes
 
 - **Preload vs switch:** All samplers are instantiated at boot so switching is bypass-only — fast and glitch-free compared to loading SFZs on demand.

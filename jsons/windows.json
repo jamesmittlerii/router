@@ -1,0 +1,119 @@
+{
+  "version": 2,
+  "name": "Windows Simple",
+  "description": "one plugin for windows",
+  "width": 1200,
+  "height": 600,
+  "plugins": {
+
+     "27": {
+      "uri": "http://bristol.sourceforge.net/lv2/vox",
+      "symbol": "bristol-vox",
+      "bypass": true,
+      "gain": 3.5,
+      "x": 300,
+      "y": 20,
+      "controls": {
+        "gain": 0.25
+      }
+    },
+   
+    "25": {
+      "uri": "http://studionumbersix.com/foo/lv2/yc20",
+      "symbol": "foo-yc20",
+      "bypass": true,
+      "gain": 20.0,
+      "x": 300,
+      "y": 200,
+      "controls": {
+        "volume": 1.0,
+        "bass_volume": 0.0,
+        "realism": 0.0,
+        "depth": 0.08,
+        "speed": 0.22,
+        "balance": 0.65,
+        "bright": 0.8,
+        "b_16": 0.0,
+        "b_8": 0.0,
+        "bass_manual": 0.0,
+        "i_16": 0.2,
+        "i_8": 1.0,
+        "i_4": 0.85,
+        "i_2_2p3": 0.3,
+        "i_2": 0.55,
+        "i_1_3p5": 0.15,
+        "i_1": 0.1,
+        "ii_16": 0.1,
+        "ii_8": 0.75,
+        "ii_4": 0.55,
+        "ii_2": 0.25,
+        "percussive": 0.2,
+        "pitch": 0.0
+      }
+    },
+
+     "28": {
+      "uri": "https://ho-ro.net/connie/lv2",
+      "symbol": "horo-connie",
+      "bypass": false,
+      "gain": 7.0,
+      "x": 300,
+      "y": 20,
+      "controls": {
+        "db_16": 0.75,
+        "db_8": 1.0,
+        "db_4": 0.75,
+        "db_iv": 1.0,
+        "db_flute": 1.0,
+        "db_reed": 0.5,
+        "db_sharp": 0.0,
+        "db_perc": 0.0,
+        "db_vibrato": 0.0,
+        "db_reverb": 0.5,
+        "master": 0.25,
+        "transpose": 0.5,
+        "preset": 0.0
+      }
+    }
+  
+  },
+  "connections": [
+   
+    {
+      "from": "@alias:Minilab3 MIDI",
+      "to": "25:midi"
+    },
+     {
+      "from": "@alias:Minilab3 MIDI",
+      "to": "27:midi_in"
+    },
+    {
+      "from": "@alias:Minilab3 MIDI",
+      "to": "28:midi"
+    },
+    {
+      "from": "25:output_L",
+      "to": "system:playback_1"
+    },
+    {
+      "from": "25:output_R",
+      "to": "system:playback_2"
+    },
+     {
+      "from": "27:audio_l",
+      "to": "system:playback_1"
+    },
+    {
+      "from": "27:audio_r",
+      "to": "system:playback_2"
+    },
+     {
+      "from": "28:output_L",
+      "to": "system:playback_1"
+    },
+    {
+      "from": "28:output_R",
+      "to": "system:playback_1"
+    }
+  ]
+}

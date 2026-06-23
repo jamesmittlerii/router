@@ -27,6 +27,7 @@ import queue
 import threading
 import subprocess
 import signal
+import argparse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -1340,6 +1341,7 @@ class RouterSession:
     preset_out_port: Optional[jack.Port] = None
     lcxl_out_port: Optional[jack.Port] = None
     cc_forward_out_port: Optional[jack.Port] = None
+    no_midi_connect: bool = False
 
 
 @dataclass
@@ -1349,14 +1351,24 @@ class MidiListenerState:
     last_fluida_preset_cc: dict[int, int] = field(default_factory=dict)
 
 
-def load_pedalboard_from_argv() -> dict[str, Any]:
-    if len(sys.argv) != 2:
-        print(f"Usage: {sys.argv[0]} /path/to/pedalboard.json", file=sys.stderr)
-        sys.exit(2)
+def load_pedalboard_from_argv() -> tuple[dict[str, Any], bool]:
+    parser = argparse.ArgumentParser(
+        description="Load a pedalboard.json into mod-host."
+    )
+    parser.add_argument(
+        "--no-midi-connect",
+        action="store_true",
+        help=(
+            "Do not auto-connect JACK MIDI ports or sync the SL88. "
+            "The loader will keep running with MIDI wiring left manual."
+        ),
+    )
+    parser.add_argument("pedalboard_json", help="Path to pedalboard.json")
+    args = parser.parse_args()
 
-    pb_path = Path(sys.argv[1])
+    pb_path = Path(args.pedalboard_json)
     try:
-        return json.loads(pb_path.read_text(encoding="utf-8"))
+        return json.loads(pb_path.read_text(encoding="utf-8")), args.no_midi_connect
     except FileNotFoundError:
         print(f"Error: File not found: {pb_path}")
         sys.exit(1)
@@ -1545,12 +1557,13 @@ def apply_startup_output_gain(session: RouterSession) -> None:
 
 def connect_pedalboard_ports(
     connections: list[dict[str, str]],
+    jack_client: Optional[jack.Client] = None,
 ) -> list[tuple[str, str]]:
     active_connections: list[tuple[str, str]] = []
     print("== Connecting Ports ==")
     for c in connections:
-        src = expand_port(c["from"])
-        dst = expand_port(c["to"])
+        src = resolve_connection_port(c["from"], jack_client)
+        dst = resolve_connection_port(c["to"], jack_client)
         print(f"== connect {src} -> {dst}")
         try:
             mod_connect(src, dst)
@@ -1558,6 +1571,25 @@ def connect_pedalboard_ports(
         except Exception as e:
             print(f"Failed connect {src}->{dst}: {e}")
     return active_connections
+
+
+def resolve_connection_port(port: str, jack_client: Optional[jack.Client]) -> str:
+    if not port.startswith("@alias:"):
+        return expand_port(port)
+    if jack_client is None:
+        raise RuntimeError(f"cannot resolve JACK alias without a JACK client: {port}")
+
+    alias = port[len("@alias:") :].strip()
+    if not alias:
+        raise ValueError("empty JACK alias in pedalboard connection")
+
+    resolved = find_midi_port_by_alias(jack_client, alias)
+    if resolved is None:
+        raise RuntimeError(f"could not resolve JACK alias '{alias}'")
+
+    aliases = ", ".join(resolved.aliases)
+    print(f"Resolved {port} -> {resolved.name} ({aliases})")
+    return resolved.name
 
 
 def maybe_send_fluida_preset(
@@ -1886,6 +1918,15 @@ def run_midi_event_loop(
             break
 
 
+def run_idle_until_stopped() -> None:
+    print(
+        "MIDI auto-connect disabled; leaving MIDI ports unconnected."
+        " Press Ctrl+C to stop."
+    )
+    while not stop_event.is_set():
+        time.sleep(0.25)
+
+
 def run_loader_session(
     session: RouterSession,
     restored_cc: list[tuple[int, str, float]],
@@ -1920,7 +1961,9 @@ def run_loader_session(
     apply_startup_output_gain(session)
 
     time.sleep(0.2)
-    session.active_connections = connect_pedalboard_ports(session.connections)
+    session.active_connections = connect_pedalboard_ports(
+        session.connections, session.jack_client
+    )
 
     print("== done loading ==")
     print("---------------------------------------------------")
@@ -1929,17 +1972,21 @@ def run_loader_session(
     session.jack_activated = True
     print(f"Activated JACK client: {session.jack_client.name}")
 
-    sync_sl88_to_active_piano(session)
-    setup_midi_input_listeners(session)
-    run_midi_event_loop(session, cc_pickup, persist_state_fn)
+    if session.no_midi_connect:
+        run_idle_until_stopped()
+    else:
+        sync_sl88_to_active_piano(session)
+        setup_midi_input_listeners(session)
+        run_midi_event_loop(session, cc_pickup, persist_state_fn)
 
     if _shutdown_signal is not None:
         log(f"Received signal {_shutdown_signal}, stopping...")
 
 
 def main() -> None:
-    pb = load_pedalboard_from_argv()
+    pb, no_midi_connect = load_pedalboard_from_argv()
     session, restored_cc = init_router_session(pb)
+    session.no_midi_connect = no_midi_connect
 
     print("== Loading Plugins == ")
 
