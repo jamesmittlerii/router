@@ -69,12 +69,21 @@ STATE_FILE = Path(os.environ.get("ROUTER_STATE", "/var/lib/router/last_state.jso
 STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # Which JACK MIDI source to tap for Program Changes
-TARGET_PORT = "system:midi_capture_1"
+PROGRAM_TARGET_PORT = os.environ.get(
+    "PROGRAM_TARGET_PORT", "system:midi_capture_1"
+)
+LISTEN_PROGRAM_CHANGES = os.environ.get(
+    "LISTEN_PROGRAM_CHANGES", "1"
+).lower() not in ("0", "false", "no", "off")
 FILTER_CHANNEL = None  # Set to 0-15 to filter by channel, or None for all
 
-# Launch Control XL3 drawbar CC (1-based MIDI channel, matches controller display)
+# MIDI CC input defaults (1-based MIDI channel, matches controller display).
+# Override with environment variables or command-line flags.
 CC_TARGET_PORT = os.environ.get("CC_TARGET_PORT", "system:midi_capture_4")
 CC_CHANNEL = int(os.environ.get("CC_CHANNEL", str(COMMON_CHANNEL)))  # 1-16
+SEND_CONTROLLER_MESSAGES = os.environ.get(
+    "SEND_CONTROLLER_MESSAGES", "1"
+).lower() not in ("0", "false", "no", "off")
 CC_SOFT_TAKEOVER = os.environ.get("CC_SOFT_TAKEOVER", "1").lower() not in (
     "0",
     "false",
@@ -808,26 +817,36 @@ def send_fluida_preset(
 
 def connect_jack_midi_source(
     jack_client: jack.Client,
-    port_name: str,
+    port_spec: str,
     dest_port: jack.Port,
     jack_midi_connections: list[tuple[jack.Port, jack.Port]],
 ) -> None:
     """Connect a JACK MIDI capture port to one of our input ports."""
     try:
-        src_port = jack_client.get_port_by_name(port_name)
+        if port_spec.startswith("@alias:"):
+            alias = port_spec[len("@alias:") :].strip()
+            src_port = (
+                find_midi_port_by_alias(jack_client, alias, is_output=True)
+                if alias
+                else None
+            )
+        else:
+            src_port = jack_client.get_port_by_name(port_spec)
         if src_port:
             jack_client.connect(src_port, dest_port)
             jack_midi_connections.append((src_port, dest_port))
-            print(f"Connected {port_name} -> {dest_port.name}")
+            print(f"Connected {port_spec} ({src_port.name}) -> {dest_port.name}")
         else:
-            print(f"Warning: Could not find '{port_name}'. Connect manually, e.g.:")
-            print(f"  jack_connect {port_name} {dest_port.name}")
+            print(f"Warning: Could not find MIDI source '{port_spec}'")
     except jack.JackError as e:
-        print(f"Connection error ({port_name}): {e}")
+        print(f"Connection error ({port_spec}): {e}")
 
 
 def find_midi_port_by_alias(
-    jack_client: jack.Client, needle: str
+    jack_client: jack.Client,
+    needle: str,
+    *,
+    is_output: Optional[bool] = None,
 ) -> Optional[jack.Port]:
     needle_lower = needle.lower()
     for entry in jack_client.get_ports():
@@ -837,6 +856,8 @@ def find_midi_port_by_alias(
             else entry
         )
         if port is None:
+            continue
+        if is_output is not None and bool(port.is_output) != is_output:
             continue
         for alias in port.aliases:
             if needle_lower in alias.lower():
@@ -949,6 +970,8 @@ def configure_lcxl_for_plugin(
 
     plugin = session.plugins.get(str(instance))
     if not isinstance(plugin, dict):
+        return
+    if not isinstance(plugin.get("lcxl"), dict):
         return
 
     symbol = plugin.get("symbol") or str(instance)
@@ -1093,7 +1116,10 @@ def _get_or_create_cc_pickup(
 
 
 def _cc_soft_takeover_allows(
-    state: CcPickupState, control: int, midi_val: int
+    state: CcPickupState,
+    control: int,
+    midi_val: int,
+    cc_channel: int,
 ) -> bool:
     """Return False when soft takeover blocks applying this CC."""
     if not CC_SOFT_TAKEOVER:
@@ -1104,7 +1130,7 @@ def _cc_soft_takeover_allows(
     if not state.armed:
         state.armed = True
         print(
-            f"🎚️  CC ch{CC_CHANNEL} cc={control} pickup"
+            f"🎚️  CC ch{cc_channel} cc={control} pickup"
             f" (target={state.target_midi}, fader={midi_val})"
         )
     return True
@@ -1116,6 +1142,7 @@ def _apply_cc_to_plugin(
     midi_val: int,
     state: CcPickupState,
     applied_params: dict[tuple[int, str], float],
+    cc_channel: int,
     persist_state: Optional[Callable[..., None]] = None,
 ) -> None:
     if mapping.pass_through:
@@ -1123,7 +1150,7 @@ def _apply_cc_to_plugin(
         applied_params[(mapping.instance, mapping.param)] = float(midi_val)
         state.target_midi = midi_val
         print(
-            f"🎚️  CC ch{CC_CHANNEL} cc={control}"
+            f"🎚️  CC ch{cc_channel} cc={control}"
             f" -> sfizz {mapping.instance} CC {control}={midi_val}"
         )
         if persist_state is not None:
@@ -1135,7 +1162,7 @@ def _apply_cc_to_plugin(
         mod_param_set(mapping.instance, mapping.param, param_val)
     except Exception as e:
         print(
-            f"Failed CC ch{CC_CHANNEL} cc={control}"
+            f"Failed CC ch{cc_channel} cc={control}"
             f" -> {mapping.instance}:{mapping.param}: {e}"
         )
         return
@@ -1144,7 +1171,7 @@ def _apply_cc_to_plugin(
     state.target_midi = midi_val
 
     print(
-        f"🎚️  CC ch{CC_CHANNEL} cc={control}"
+        f"🎚️  CC ch{cc_channel} cc={control}"
         f" -> {mapping.instance}:{mapping.param}={param_val:.3f}"
     )
     if persist_state is not None:
@@ -1175,7 +1202,10 @@ def _process_cc_event(
 
     last_seen_midi[msg.control] = msg.value
     state = _get_or_create_cc_pickup(cc_pickup, msg.control)
-    if not _cc_soft_takeover_allows(state, msg.control, msg.value):
+    display_channel = cc_mido_channel + 1
+    if not _cc_soft_takeover_allows(
+        state, msg.control, msg.value, display_channel
+    ):
         return
 
     state.last_midi = msg.value
@@ -1185,6 +1215,7 @@ def _process_cc_event(
         msg.value,
         state,
         applied_params,
+        display_channel,
         persist_state,
     )
 
@@ -1196,12 +1227,14 @@ def drain_cc_events(
     cc_pickup: dict[int, CcPickupState],
     active_piano: Optional[int],
     persist_state: Optional[Callable[..., None]] = None,
+    *,
+    cc_channel: int = CC_CHANNEL,
 ) -> None:
-    """Apply control changes on CC_CHANNEL via mod-host param_set."""
+    """Apply control changes on the configured MIDI channel via mod-host."""
     if not cc_map:
         return
 
-    cc_mido_channel = CC_CHANNEL - 1
+    cc_mido_channel = cc_channel - 1
     while True:
         data = _pop_cc_event()
         if data is None:
@@ -1321,6 +1354,11 @@ class RouterSession:
     restored_piano: Optional[int]
     cc_mapped_instances: set[int]
     plugin_ids: list[int]
+    program_target_port: str = PROGRAM_TARGET_PORT
+    listen_program_changes: bool = LISTEN_PROGRAM_CHANGES
+    cc_target_port: str = CC_TARGET_PORT
+    cc_channel: int = CC_CHANNEL
+    send_controller_messages: bool = SEND_CONTROLLER_MESSAGES
     piano_ids: list[int] = field(default_factory=list)
     active_piano: Optional[int] = None
     program_gains: dict[int, float] = field(default_factory=dict)
@@ -1351,7 +1389,19 @@ class MidiListenerState:
     last_fluida_preset_cc: dict[int, int] = field(default_factory=dict)
 
 
-def load_pedalboard_from_argv() -> tuple[dict[str, Any], bool, bool]:
+def midi_channel_arg(value: str) -> int:
+    try:
+        channel = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer from 1 to 16") from exc
+    if not 1 <= channel <= 16:
+        raise argparse.ArgumentTypeError("must be between 1 and 16")
+    return channel
+
+
+def load_pedalboard_from_argv() -> tuple[
+    dict[str, Any], bool, bool, str, bool, str, int, bool
+]:
     parser = argparse.ArgumentParser(
         description="Load a pedalboard.json into mod-host."
     )
@@ -1368,15 +1418,77 @@ def load_pedalboard_from_argv() -> tuple[dict[str, Any], bool, bool]:
         action="store_true",
         help="Do not load the saved router state from ROUTER_STATE for this run.",
     )
+    parser.add_argument(
+        "--program-source",
+        default=PROGRAM_TARGET_PORT,
+        help=(
+            "JACK MIDI source for Program Change messages. Accepts a full port"
+            " name or @alias:text. Default: PROGRAM_TARGET_PORT or"
+            " system:midi_capture_1."
+        ),
+    )
+    program_group = parser.add_mutually_exclusive_group()
+    program_group.add_argument(
+        "--program-changes",
+        dest="listen_program_changes",
+        action="store_true",
+        help="Enable the Program Change listener.",
+    )
+    program_group.add_argument(
+        "--no-program-changes",
+        dest="listen_program_changes",
+        action="store_false",
+        help="Disable the Program Change listener and its JACK connection.",
+    )
+    parser.set_defaults(listen_program_changes=LISTEN_PROGRAM_CHANGES)
+    parser.add_argument(
+        "--cc-source",
+        default=CC_TARGET_PORT,
+        help=(
+            "JACK MIDI source for mapped CC messages. Accepts a full port name"
+            " or @alias:text. Default: CC_TARGET_PORT or system:midi_capture_4."
+        ),
+    )
+    parser.add_argument(
+        "--cc-channel",
+        type=midi_channel_arg,
+        default=CC_CHANNEL,
+        help="MIDI channel for mapped CC messages (1-16). Default: CC_CHANNEL or 2.",
+    )
+    controller_group = parser.add_mutually_exclusive_group()
+    controller_group.add_argument(
+        "--send-controller-messages",
+        dest="send_controller_messages",
+        action="store_true",
+        help="Enable outbound SL88 sync and LCXL setup messages.",
+    )
+    controller_group.add_argument(
+        "--no-controller-messages",
+        dest="send_controller_messages",
+        action="store_false",
+        help="Disable outbound SL88 sync and LCXL setup messages.",
+    )
+    parser.set_defaults(send_controller_messages=SEND_CONTROLLER_MESSAGES)
     parser.add_argument("pedalboard_json", help="Path to pedalboard.json")
     args = parser.parse_args()
 
     pb_path = Path(args.pedalboard_json)
     try:
+        program_source = args.program_source.strip()
+        if not program_source:
+            parser.error("--program-source must not be empty")
+        cc_source = args.cc_source.strip()
+        if not cc_source:
+            parser.error("--cc-source must not be empty")
         return (
             json.loads(pb_path.read_text(encoding="utf-8")),
             args.no_midi_connect,
             args.skip_state,
+            program_source,
+            args.listen_program_changes,
+            cc_source,
+            args.cc_channel,
+            args.send_controller_messages,
         )
     except FileNotFoundError:
         print(f"Error: File not found: {pb_path}")
@@ -1387,10 +1499,23 @@ def load_pedalboard_from_argv() -> tuple[dict[str, Any], bool, bool]:
 
 
 def init_router_session(
-    pb: dict[str, Any], *, skip_state: bool = False
+    pb: dict[str, Any],
+    *,
+    skip_state: bool = False,
+    program_target_port: str = PROGRAM_TARGET_PORT,
+    listen_program_changes: bool = LISTEN_PROGRAM_CHANGES,
+    cc_target_port: str = CC_TARGET_PORT,
+    cc_channel: int = CC_CHANNEL,
+    send_controller_messages: bool = SEND_CONTROLLER_MESSAGES,
 ) -> tuple[RouterSession, list[tuple[int, str, float]]]:
     plugins: dict[str, Any] = pb.get("plugins", {})
     connections: list[dict[str, str]] = pb.get("connections", [])
+    if not program_target_port:
+        raise ValueError("Program Change source must not be empty")
+    if not cc_target_port:
+        raise ValueError("CC source must not be empty")
+    if not 1 <= cc_channel <= 16:
+        raise ValueError("CC channel must be between 1 and 16")
     cc_map = build_cc_map(plugins)
     applied_params = seed_applied_params(plugins)
     if skip_state:
@@ -1409,6 +1534,11 @@ def init_router_session(
         restored_piano=restored_piano,
         cc_mapped_instances=instances_with_cc_maps(cc_map),
         plugin_ids=sorted(int(sid) for sid in plugins.keys()),
+        program_target_port=program_target_port,
+        listen_program_changes=listen_program_changes,
+        cc_target_port=cc_target_port,
+        cc_channel=cc_channel,
+        send_controller_messages=send_controller_messages,
     )
     return session, restored_cc
 
@@ -1687,13 +1817,23 @@ def setup_midi_input_listeners(session: RouterSession) -> None:
     if session.jack_client is None or session.in_port is None:
         return
 
-    print("Starting JACK MIDI listener for Program Changes...")
-    print(f"Listening on: {session.jack_client.name}:input")
-    connect_jack_midi_source(
-        session.jack_client, TARGET_PORT, session.in_port, session.jack_midi_connections
-    )
+    if session.listen_program_changes:
+        print("Starting JACK MIDI listener for Program Changes...")
+        print(f"Program Change source: {session.program_target_port}")
+        print(f"Listening on: {session.jack_client.name}:input")
+        connect_jack_midi_source(
+            session.jack_client,
+            session.program_target_port,
+            session.in_port,
+            session.jack_midi_connections,
+        )
+    else:
+        print("Program Change listener disabled")
 
-    print(f"Listening for Control Changes on ch{CC_CHANNEL}...")
+    print(
+        f"Listening for Control Changes from {session.cc_target_port}"
+        f" on ch{session.cc_channel}..."
+    )
     print(f"Listening on: {session.jack_client.name}:cc_input")
     if session.cc_map:
         for cc_num in sorted(session.cc_map):
@@ -1704,21 +1844,29 @@ def setup_midi_input_listeners(session: RouterSession) -> None:
         print(f"  Soft takeover: {takeover} (threshold={CC_PICKUP_THRESHOLD})")
         connect_jack_midi_source(
             session.jack_client,
-            CC_TARGET_PORT,
+            session.cc_target_port,
             session.cc_in_port,
             session.jack_midi_connections,
         )
     else:
         print("  (no plugin midi_cc mappings in pedalboard)")
 
-    if session.lcxl_out_port is not None:
+    has_lcxl_config = any(
+        isinstance(plugin, dict) and isinstance(plugin.get("lcxl"), dict)
+        for plugin in session.plugins.values()
+    )
+    if (
+        session.send_controller_messages
+        and has_lcxl_config
+        and session.lcxl_out_port is not None
+    ):
         connect_lcxl_daw_in(
             session.jack_client,
             session.lcxl_out_port,
             session.jack_midi_connections,
         )
 
-    if session.active_piano is not None:
+    if session.send_controller_messages and session.active_piano is not None:
         configure_lcxl_for_plugin(session, session.active_piano)
 
     if session.fluida_presets:
@@ -1768,6 +1916,7 @@ def _drain_aux_midi_queues(
         cc_pickup,
         session.active_piano,
         persist_state_fn,
+        cc_channel=session.cc_channel,
     )
     drain_fluida_preset_cc_events(
         cc_event_q,
@@ -1834,7 +1983,8 @@ def switch_active_piano(
     _apply_output_gain_for_piano(session, prog)
     session.active_piano = prog
     maybe_send_fluida_preset(session, prog)
-    configure_lcxl_for_plugin(session, prog)
+    if session.send_controller_messages:
+        configure_lcxl_for_plugin(session, prog)
     try:
         persist_state_fn(force=True)
         print(f"   [State] Saved active piano {prog} to {STATE_FILE}")
@@ -1990,7 +2140,10 @@ def run_loader_session(
     if session.no_midi_connect:
         run_idle_until_stopped()
     else:
-        sync_sl88_to_active_piano(session)
+        if session.send_controller_messages:
+            sync_sl88_to_active_piano(session)
+        elif session.active_piano is not None:
+            maybe_send_fluida_preset(session, session.active_piano)
         setup_midi_input_listeners(session)
         run_midi_event_loop(session, cc_pickup, persist_state_fn)
 
@@ -1999,8 +2152,25 @@ def run_loader_session(
 
 
 def main() -> None:
-    pb, no_midi_connect, skip_state = load_pedalboard_from_argv()
-    session, restored_cc = init_router_session(pb, skip_state=skip_state)
+    (
+        pb,
+        no_midi_connect,
+        skip_state,
+        program_target_port,
+        listen_program_changes,
+        cc_target_port,
+        cc_channel,
+        send_controller_messages,
+    ) = load_pedalboard_from_argv()
+    session, restored_cc = init_router_session(
+        pb,
+        skip_state=skip_state,
+        program_target_port=program_target_port,
+        listen_program_changes=listen_program_changes,
+        cc_target_port=cc_target_port,
+        cc_channel=cc_channel,
+        send_controller_messages=send_controller_messages,
+    )
     session.no_midi_connect = no_midi_connect
 
     print("== Loading Plugins == ")

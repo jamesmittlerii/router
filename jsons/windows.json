@@ -52,7 +52,7 @@
     "28": {
       "uri": "https://ho-ro.net/connie/lv2",
       "symbol": "horo-connie",
-      "bypass": true,
+      "bypass": false,
       "gain": 7.0,
       "x": 300,
       "y": 20,
@@ -70,12 +70,17 @@
         "master": 0.25,
         "transpose": 0.5,
         "preset": 0.0
+      },
+      "midi_cc": {
+        "82": "db_16",
+        "83": "db_8",
+        "85": "db_4"
       }
     },
     "30": {
       "uri": "https://github.com/brummer10/Fluida.lv2",
       "symbol": "sf2-dance-organs",
-      "bypass": false,
+      "bypass": true,
       "gain": 10.0,
       "x": 100,
       "y": 200,

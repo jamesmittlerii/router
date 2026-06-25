@@ -21,10 +21,10 @@ The main use case: preload many **sfizz** (SFZ) instruments plus a shared LV2 ef
 
 1. **mod-host** runs as the LV2 plugin host (TCP control on `127.0.0.1:5555` by default).
 2. **`load_single.py`** reads a pedalboard JSON, loads every plugin via the mod-host text protocol, applies state/controls/bypass, and wires JACK connections.
-3. A JACK MIDI client taps `system:midi_capture_1` and maps **Program Change N → plugin instance N** for known sampler instances.
+3. A configurable JACK MIDI listener maps **Program Change N → plugin instance N** for known sampler instances.
 4. Optional per-plugin top-level `gain` is applied to the shared `Gain2x2` output stage when that program is selected.
 5. Switching is done with **bypass** — all instruments stay loaded in memory; only the selected one is un-bypassed.
-5. On startup, the last active instrument is restored from disk and echoed back to the SL88 so keyboard and host stay in sync.
+6. On startup, the last active instrument is restored from disk and echoed back to the SL88 so keyboard and host stay in sync.
 
 ## Signal chain (`jsons/plus.json`)
 
@@ -161,6 +161,51 @@ python3 load_single.py jsons/plus.json
 
 **Requires:** running mod-host, JACK, and Python packages `jack` (python-jack-client), `mido`.
 
+#### Runtime MIDI configuration
+
+Program Change input, mapped CC input, and outbound controller setup are independent:
+
+- **Program Change input** selects the active plugin. On the Pi this normally comes from the SL88.
+- **CC input** applies plugin `midi_cc` mappings. On the Pi this normally comes from the Launch Control XL3; on Windows it can come from the MiniLab 3.
+- **Controller messages** cover outbound SL88 synchronization and LCXL setup/SysEx. They can be disabled for input-only controllers.
+
+Command-line options override environment variables, which override the built-in Raspberry Pi defaults.
+
+| Command-line option | Environment variable | Default | Description |
+|---------------------|----------------------|---------|-------------|
+| `--program-source PORT` | `PROGRAM_TARGET_PORT` | `system:midi_capture_1` | JACK source for Program Change messages |
+| `--program-changes` / `--no-program-changes` | `LISTEN_PROGRAM_CHANGES` | enabled | Enable or completely disable Program Change listening |
+| `--cc-source PORT` | `CC_TARGET_PORT` | `system:midi_capture_4` | JACK source for mapped CC messages |
+| `--cc-channel N` | `CC_CHANNEL` | `2` | MIDI channel for mapped CC messages, 1–16 |
+| `--send-controller-messages` / `--no-controller-messages` | `SEND_CONTROLLER_MESSAGES` | enabled | Enable or disable SL88 sync and LCXL setup messages |
+| `--no-midi-connect` | — | disabled | Disable all automatic MIDI wiring and leave the loader idle |
+
+Both source options accept either a full JACK port name or a case-insensitive JACK alias substring:
+
+```bash
+--program-source system:midi_capture_1
+--program-source "@alias:SL88"
+
+--cc-source system:midi_capture_4
+--cc-source "@alias:Launch Control XL3"
+```
+
+Use `jack_lsp -A` to inspect aliases. Choose alias text that uniquely identifies the desired MIDI source port.
+
+Explicit Raspberry Pi configuration:
+
+```bash
+python3 load_single.py \
+  --program-changes \
+  --program-source "@alias:SL88" \
+  --cc-source "@alias:Launch Control XL3" \
+  --cc-channel 2 \
+  --send-controller-messages \
+  jsons/plus.json
+```
+
+This is equivalent to the normal Pi defaults, except that aliases are used instead of fixed JACK port names.
+
 **Environment variables:**
 
 | Variable | Default | Description |
@@ -169,6 +214,11 @@ python3 load_single.py jsons/plus.json
 | `MOD_PORT` | `5555` | mod-host TCP port |
 | `MOD_TIMEOUT` | `5.0` | Socket timeout (seconds) |
 | `ROUTER_STATE` | `/var/lib/router/last_state.json` | Persisted last active instrument |
+| `PROGRAM_TARGET_PORT` | `system:midi_capture_1` | JACK source for Program Change messages; accepts `@alias:text` |
+| `LISTEN_PROGRAM_CHANGES` | `1` | Enable Program Change input; set to `0` to disable |
+| `CC_TARGET_PORT` | `system:midi_capture_4` | JACK source for mapped CC messages; accepts `@alias:text` |
+| `CC_CHANNEL` | `2` | MIDI channel for mapped CC messages (1–16) |
+| `SEND_CONTROLLER_MESSAGES` | `1` | Send SL88 sync and LCXL setup; set to `0` to disable |
 
 On exit (Ctrl+C / SIGTERM), the loader disconnects ports and removes loaded plugins from mod-host.
 
@@ -184,7 +234,7 @@ python3 modhost_cmd.py "param_set 43 Gain -3.0"
 
 ### Launch Control XL3
 
-Plugins with an `lcxl` section in the pedalboard JSON get a custom-mode SysEx upload on program change (fader/encoder CC maps and labels). See **[docs/lcxl3-sysex.md](docs/lcxl3-sysex.md)** for the reverse-engineered format, common wrong assumptions, and test commands.
+Plugins with an `lcxl` section in the pedalboard JSON get a custom-mode SysEx upload on program change (fader/encoder CC maps and labels). Pedalboards without any `lcxl` sections do not connect the LCXL output or send controller setup messages. See **[docs/lcxl3-sysex.md](docs/lcxl3-sysex.md)** for the reverse-engineered format, common wrong assumptions, and test commands.
 
 ```bash
 python test/lcxl3_setup_plugin.py 26 --listen 150   # Caveman (SFZ pass-through)
@@ -251,10 +301,15 @@ This UCRT64 venv uses `.venv/bin`, not `.venv/Scripts`.
 Then load the Windows pedalboard:
 
 ```bash
-python load_single.py --no-midi-connect jsons/windows.json
+python load_single.py --skip-state \
+  --no-program-changes \
+  --cc-source "@alias:Minilab3 MIDI" \
+  --cc-channel 1 \
+  --no-controller-messages \
+  jsons/windows.json
 ```
 
-The Windows JSON uses JACK's WinMME port names (`system_midi:capture_N`), and `--no-midi-connect` leaves the remaining MIDI wiring manual while the pedalboard is loaded.
+This disables Program Change input, listens for MiniLab mapped CC messages on MIDI channel 1, and avoids sending SL88 sync or LCXL setup messages. Ordinary note connections remain defined in `windows.json`.
 
 ## Design notes
 
