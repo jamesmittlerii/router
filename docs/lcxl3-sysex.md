@@ -1,6 +1,6 @@
 # Launch Control XL3 — custom mode SysEx notes
 
-Reverse-engineered from **Novation Components** `.syx` exports and validated on hardware with `lcxl3.py`, `test/lcxl3_setup_plugin.py`, and `load_single.py`.
+Reverse-engineered from **Novation Components** `.syx` exports and validated on hardware with `src/router_loader/lcxl3.py`, `test/lcxl3_setup_plugin.py`, and `modrouter`.
 
 Public Novation documentation is **incomplete** for custom-mode writes. Components is the reference implementation. The programmer reference is accurate for **DAW-In feature controls** (global MIDI channel), but not sufficient to build a working uploader from prose alone.
 
@@ -119,7 +119,7 @@ This matches Novation’s programmer reference for feature controls.
 
 ## Router integration
 
-Pedalboard plugins can define an `lcxl` section in JSON (`jsons/plus.json`). On program change, `load_single.configure_lcxl_for_plugin()` uploads the matching layout via JACK → LCXL DAW-In.
+Pedalboard plugins can define an `lcxl` section in JSON (`jsons/plus.json`). On program change, `modrouter.configure_lcxl_for_plugin()` uploads the matching layout via JACK → LCXL DAW-In.
 
 | Instrument | Example | CC handling |
 |------------|---------|-------------|
@@ -161,6 +161,6 @@ python test/lcxl3_diff_syx.py ch1.syx ch2.syx
 
 | File | Role |
 |------|------|
-| `lcxl3.py` | SysEx builder |
-| `load_single.py` | `configure_lcxl_for_plugin()`, CC routing |
+| `src/router_loader/lcxl3.py` | SysEx builder |
+| `src/router_loader/modrouter.py` | `configure_lcxl_for_plugin()`, CC routing |
 | `test/lcxl3_setup_plugin.py` | Standalone upload + listen (Windows rtmidi / Linux JACK) |

@@ -14,13 +14,13 @@ The main use case: preload many **sfizz** (SFZ) instruments plus a shared LV2 ef
 │       │         │                                                       │
 │       │         └──► shared stereo FX bus ──► system:playback           │
 │       │                                                                 │
-│       └──► load_single.py listens for Program Change                    │
+│       └──► modrouter listens for Program Change                         │
 │                 └──► mod-host bypass commands                           │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 1. **mod-host** runs as the LV2 plugin host (TCP control on `127.0.0.1:5555` by default).
-2. **`load_single.py`** reads a pedalboard JSON, loads every plugin via the mod-host text protocol, applies state/controls/bypass, and wires JACK connections.
+2. **`modrouter`** reads a pedalboard JSON, loads every plugin via the mod-host text protocol, applies state/controls/bypass, and wires JACK connections.
 3. A configurable JACK MIDI listener maps **Program Change N → plugin instance N** for known sampler instances.
 4. Optional per-plugin top-level `gain` is applied to the shared `Gain2x2` output stage when that program is selected.
 5. Switching is done with **bypass** — all instruments stay loaded in memory; only the selected one is un-bypassed.
@@ -89,7 +89,7 @@ Instruments (10–22)
 
 The wah stage splits left and right after StereoTools so each channel can be processed independently before rejoining at the saturator.
 
-Most FX slots are present in the chain but **bypassed** in the JSON — they can be toggled live via `modhost_cmd.py` without reconfiguring the pedalboard.
+Most FX slots are present in the chain but **bypassed** in the JSON — they can be toggled live via `router-modhost-cmd` without reconfiguring the pedalboard.
 
 ### MIDI Program Change mapping
 
@@ -102,7 +102,7 @@ Program Change value **equals the mod-host instance ID**:
 Only instances registered as sampler plugins (sfizz and Fluida URIs) participate in switching. Program changes for unknown IDs are ignored.
 If a selected plugin has a top-level `gain` value, that dB value is sent to the `Gain` parameter of the pedalboard's `Gain2x2` plugin, discovered by URI.
 
-**Special:** PC **50** (`KILL_PC` in `load_single.py`) triggers `systemctl poweroff` — a foot-switch or panic patch can shut the machine down.
+**Special:** PC **50** (`KILL_PC` in `modrouter`) triggers `systemctl poweroff` — a foot-switch or panic patch can shut the machine down.
 
 ## Pedalboard JSON format
 
@@ -153,13 +153,25 @@ Configs follow MOD pedalboard v2 layout (compatible enough for headless loading)
 
 ## Scripts
 
-### `load_single.py` — main loader / router
-
-```bash
-python3 load_single.py jsons/plus.json
-```
+### `modrouter` — main loader / router
 
 **Requires:** running mod-host, JACK, and Python packages `jack` (python-jack-client), `mido`.
+
+The repo is also installable as a Python package:
+
+```bash
+python -m pip install -e .
+modrouter jsons/plus.json
+```
+
+The packaged implementation lives under `src/router_loader/`, with console
+scripts for the main loader and helper tools:
+
+| Command | Entry point |
+|---------|-------------|
+| `modrouter` | `router_loader.modrouter:main` |
+| `router-calibrate-gain` | `router_loader.calibrate_gain:main` |
+| `router-modhost-cmd` | `router_loader.modhost_cmd:main` |
 
 #### Runtime MIDI configuration
 
@@ -195,7 +207,7 @@ Use `jack_lsp -A` to inspect aliases. Choose alias text that uniquely identifies
 Explicit Raspberry Pi configuration:
 
 ```bash
-python3 load_single.py \
+modrouter \
   --program-changes \
   --program-source "@alias:SL88" \
   --cc-source "@alias:Launch Control XL3" \
@@ -224,12 +236,12 @@ On exit (Ctrl+C / SIGTERM), the loader disconnects ports and removes loaded plug
 
 **SL88 sync:** After load, if an active piano is known, the loader sends a one-shot Program Change on **MIDI channel 2** (`COMMON_CHANNEL`) to `system:midi_playback_1` so the keyboard display matches the host.
 
-### `modhost_cmd.py` — ad-hoc mod-host control
+### `router-modhost-cmd` — ad-hoc mod-host control
 
 ```bash
-python3 modhost_cmd.py list
-python3 modhost_cmd.py "bypass 42 0"      # enable reverb
-python3 modhost_cmd.py "param_set 43 Gain -3.0"
+router-modhost-cmd list
+router-modhost-cmd "bypass 42 0"      # enable reverb
+router-modhost-cmd "param_set 43 Gain -3.0"
 ```
 
 ### Launch Control XL3
@@ -252,7 +264,7 @@ Shell scripts (`jalv_chain*.sh`, `vanilla.sh`, `teardown.sh`) exercise individua
 3. Run the loader:
 
    ```bash
-   python3 load_single.py jsons/plus.json
+   modrouter jsons/plus.json
    ```
 
 4. Play — use Program Change on the master keyboard to switch instruments. The loader debounces repeated PCs and saves the selection to `ROUTER_STATE`.
@@ -301,7 +313,7 @@ This UCRT64 venv uses `.venv/bin`, not `.venv/Scripts`.
 Then load the Windows pedalboard:
 
 ```bash
-python load_single.py --skip-state \
+modrouter --skip-state \
   --no-program-changes \
   --cc-source "@alias:Minilab3 MIDI" \
   --cc-channel 1 \

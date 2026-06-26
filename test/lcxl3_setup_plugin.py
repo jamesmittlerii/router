@@ -3,7 +3,7 @@
 Upload an LCXL3 custom-mode layout from a pedalboard.json plugin entry.
 
 Reads the plugin's ``lcxl`` section, builds the
-same SysEx payload as load_single.py, and sends it to the LCXL3 DAW-In port.
+same SysEx payload as modrouter, and sends it to the LCXL3 DAW-In port.
 
 Works with the LCXL3 connected directly to this PC (rtmidi) or via JACK.
 
@@ -26,10 +26,11 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
-from lcxl3 import (  # noqa: E402
+from router_loader.lcxl3 import (  # noqa: E402
     LIVE_CUSTOM_MODE_SLOT,
     build_custom_mode_messages,
     build_global_channel_midi_messages,

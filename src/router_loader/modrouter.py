@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Headless MOD-style pedalboard.json loader for mod-host.
 (Single Client Version)
@@ -20,7 +22,6 @@ Compatibility notes:
 
 import json
 import os
-import socket
 import sys
 import time
 import queue
@@ -32,20 +33,35 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-import jack
 import mido
 
-from lcxl3 import (
+try:
+    import jack
+except (ImportError, OSError) as exc:
+    jack = None
+    _jack_import_error: Exception | None = exc
+else:
+    _jack_import_error = None
+
+from .lcxl3 import (
     build_custom_mode_messages,
     build_global_channel_midi_messages,
     resolve_lcxl_cc_lists,
 )
+from .modhost import (
+    mod_add,
+    mod_bypass,
+    mod_connect,
+    mod_disconnect_quiet,
+    mod_param_set,
+    mod_patch_set,
+    mod_remove_quiet,
+    parse_resp,
+    send_cmd,
+)
 
 # ---- Configuration ----
 
-MOD_HOST = os.environ.get("MOD_HOST", "127.0.0.1")
-MOD_PORT = int(os.environ.get("MOD_PORT", "5555"))
-TIMEOUT_S = float(os.environ.get("MOD_TIMEOUT", "5.0"))
 COMMON_CHANNEL = 2  # User confirmed Channel 2
 FLUIDA_URI = "https://github.com/brummer10/Fluida.lv2"
 PIANO_PLUGIN_URIS = frozenset(
@@ -66,7 +82,6 @@ OUTPUT_GAIN_PARAM = "Gain"
 
 # Configuration for State Persistence
 STATE_FILE = Path(os.environ.get("ROUTER_STATE", "/var/lib/router/last_state.json"))
-STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # Which JACK MIDI source to tap for Program Changes
 PROGRAM_TARGET_PORT = os.environ.get(
@@ -143,118 +158,6 @@ def log(msg: str) -> None:
 
 
 configure_stdio()
-
-
-# ---- Helper Functions ----
-
-def send_cmd(line: str) -> str:
-    """
-    Send one mod-host command, return response text (NUL bytes removed).
-    """
-    data = (line.rstrip("\n") + "\n").encode("utf-8", errors="replace")
-    with socket.create_connection((MOD_HOST, MOD_PORT), timeout=TIMEOUT_S) as s:
-        s.sendall(data)
-        s.shutdown(socket.SHUT_WR)
-        resp = b""
-        while True:
-            chunk = s.recv(4096)
-            if not chunk:
-                break
-            resp += chunk
-
-    # mod-host may include NUL bytes (you saw this in bash as "ignored null byte")
-    resp = resp.replace(b"\x00", b"")
-    return resp.decode("utf-8", errors="replace").strip()
-
-
-def parse_resp(resp: str) -> Optional[int]:
-    """
-    Parse 'resp <int>' and return the int, else None.
-    """
-    r = resp.strip().replace("\x00", "")
-    if not r.startswith("resp "):
-        return None
-    parts = r.split()
-    if len(parts) < 2:
-        return None
-    try:
-        return int(parts[1])
-    except ValueError:
-        return None
-
-
-def expect_nonnegative(resp: str, what: str) -> int:
-    """
-    Accept any non-negative resp code as success; return code.
-    """
-    code = parse_resp(resp)
-    if code is None:
-        raise RuntimeError(f"{what} failed (unparseable): {resp}")
-    if code < 0:
-        raise RuntimeError(f"{what} failed: {resp}")
-    return code
-
-
-def expect_zero(resp: str, what: str) -> None:
-    """
-    Success iff resp == 0.
-    """
-    code = parse_resp(resp)
-    if code != 0:
-        raise RuntimeError(f"{what} failed: {resp}")
-
-
-def mod_preload(uri: str, instance_id: int) -> None:
-    resp = send_cmd(f'preload "{uri}" {instance_id}')
-    code = expect_nonnegative(resp, f'add {instance_id} {uri}')
-    # Many builds return the created instance id.
-    if code != instance_id:
-        print(f"WARNING: add requested id={instance_id} but host returned resp {code}")
-
-
-def mod_bypass(inst: int, bypass_on: bool) -> None:
-    # bypass_on=True  -> "bypass <inst> 1"
-    # bypass_on=False -> "bypass <inst> 0"
-    resp = send_cmd(f"bypass {inst} {1 if bypass_on else 0}")
-    expect_zero(resp, f"bypass {inst}")
-
-def mod_add(uri: str, instance_id: int) -> None:
-    resp = send_cmd(f'add "{uri}" {instance_id}')
-    code = expect_nonnegative(resp, f'add {instance_id} {uri}')
-    # Many builds return the created instance id.
-    if code != instance_id:
-        print(f"WARNING: add requested id={instance_id} but host returned resp {code}")
-
-
-def mod_param_set(instance_id: int, symbol: str, value: Any) -> None:
-    # param_set expects scalar values; keep as-is (numbers ok)
-    resp = send_cmd(f"param_set {instance_id} {symbol} {value}")
-    expect_zero(resp, f"param_set {instance_id} {symbol}")
-
-
-def mod_patch_set(instance_id: int, key: str, value: str) -> None:
-    # patch_set expects quoted key and quoted value
-    resp = send_cmd(f'patch_set {instance_id} "{key}" "{value}"')
-    expect_zero(resp, f"patch_set {instance_id} {key}")
-
-
-def mod_connect(src: str, dst: str) -> None:
-    resp = send_cmd(f'connect "{src}" "{dst}"')
-    expect_zero(resp, f"connect {src} -> {dst}")
-
-
-def mod_disconnect_quiet(src: str, dst: str) -> None:
-    try:
-        send_cmd(f'disconnect "{src}" "{dst}"')
-    except Exception as e:
-        print(f"Failed to disconnect {src}->{dst}: {e}")
-
-
-def mod_remove_quiet(instance_id: int) -> None:
-    try:
-        send_cmd(f"remove {instance_id}")
-    except Exception as e:
-        print(f"Failed to remove plugin {instance_id}: {e}")
 
 
 def get_plugin_gain(p: dict[str, Any], fallback: float) -> float:
@@ -750,6 +653,11 @@ def create_jack_client() -> tuple[
     jack.Port,
 ]:
     """Open the router JACK MIDI client (retries if a stale client name lingers)."""
+    if jack is None:
+        raise RuntimeError(
+            "JACK support is unavailable. Install python-jack-client and make sure "
+            "the JACK runtime library is on PATH/LD_LIBRARY_PATH."
+        ) from _jack_import_error
     last_err: Optional[Exception] = None
     for attempt in range(1, JACK_OPEN_RETRIES + 1):
         try:

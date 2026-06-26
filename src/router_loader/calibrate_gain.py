@@ -7,12 +7,12 @@ sampler instrument in turn via mod-host bypass, injects a short test chord over
 JACK MIDI, measures stereo RMS at the Gain2x2 output, and prints recommended
 top-level JSON `gain` values.
 
-Run this instead of load_single.py during calibration (not alongside it).
+Run this instead of modrouter during calibration (not alongside it).
 
 Example:
-  python3 calibrate_gain.py jsons/plus.json
-  python3 calibrate_gain.py jsons/plus.json --target -18 --instrument 16
-  python3 calibrate_gain.py jsons/plus.json --no-load --no-cleanup
+  router-calibrate-gain jsons/plus.json
+  router-calibrate-gain jsons/plus.json --target -18 --instrument 16
+  router-calibrate-gain jsons/plus.json --no-load --no-cleanup
 
 Requires: python3-jack-client, mido is not required.
 """
@@ -34,9 +34,11 @@ from typing import Any, Optional
 
 try:
     import jack
-except ImportError:
-    print("python3-jack-client is required: sudo apt install python3-jack-client", file=sys.stderr)
-    raise SystemExit(1)
+except (ImportError, OSError) as exc:
+    jack = None
+    _jack_import_error: Exception | None = exc
+else:
+    _jack_import_error = None
 
 MOD_HOST = os.environ.get("MOD_HOST", "127.0.0.1")
 MOD_PORT = int(os.environ.get("MOD_PORT", "5555"))
@@ -338,6 +340,11 @@ class Calibrator:
     ) -> None:
         if board.gain_instance is None:
             raise RuntimeError(f"No {OUTPUT_GAIN_URI!r} plugin found in pedalboard JSON")
+        if jack is None:
+            raise RuntimeError(
+                "JACK support is unavailable. Install python-jack-client and make "
+                "sure the JACK runtime library is on PATH/LD_LIBRARY_PATH."
+            ) from _jack_import_error
 
         self.board = board
         self.args = args
