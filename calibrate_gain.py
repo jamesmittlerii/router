@@ -217,7 +217,7 @@ def parse_midi_targets(connections: list[dict[str, str]]) -> dict[int, str]:
     """Map instrument instance id -> mod-host MIDI input port from pedalboard wiring."""
     targets: dict[int, str] = {}
     for conn in connections:
-        if conn.get("from") != "system:midi_capture_1":
+        if conn.get("from") not in ("system:midi_capture_1", "@alias:SL-CTRL"):
             continue
         to = conn.get("to", "")
         if ":" not in to:

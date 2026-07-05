@@ -203,39 +203,39 @@
   },
   "connections": [
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "10:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "11:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "12:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "13:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "14:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "15:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "16:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "17:MIDI_IN"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "18:control"
     },
     {

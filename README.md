@@ -8,7 +8,7 @@ The main use case: preload many **sfizz** (SFZ) instruments plus a shared LV2 ef
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  MIDI in (system:midi_capture_1)                                        │
+│  MIDI in (@alias:SL-CTRL)                                                │
 │       │                                                                 │
 │       ├──► sfizz / Fluida instances 10–22  (one active, rest bypassed) │
 │       │         │                                                       │
@@ -32,7 +32,7 @@ The main use case: preload many **sfizz** (SFZ) instruments plus a shared LV2 ef
 
 ### Instruments (instance IDs 10–22)
 
-All instances receive MIDI from `system:midi_capture_1`. Audio outputs are summed into the shared bus. Only one instrument is un-bypassed at a time (default: **16 = Rhodes**).
+All instances receive MIDI from `@alias:SL-CTRL` (SL88 control port). Audio outputs are summed into the shared bus. Only one instrument is un-bypassed at a time (default: **16 = Rhodes**).
 
 | ID | Symbol | Instrument |
 |----|--------|------------|
@@ -127,7 +127,7 @@ Configs follow MOD pedalboard v2 layout (compatible enough for headless loading)
     }
   },
   "connections": [
-    { "from": "system:midi_capture_1", "to": "16:control" },
+    { "from": "@alias:SL-CTRL", "to": "16:control" },
     { "from": "16:out_left", "to": "35:in_l" }
   ]
 }
@@ -173,9 +173,9 @@ Command-line options override environment variables, which override the built-in
 
 | Command-line option | Environment variable | Default | Description |
 |---------------------|----------------------|---------|-------------|
-| `--program-source PORT` | `PROGRAM_TARGET_PORT` | `system:midi_capture_1` | JACK source for Program Change messages |
+| `--program-source PORT` | `PROGRAM_TARGET_PORT` | `@alias:SL-CTRL` | JACK source for Program Change messages |
 | `--program-changes` / `--no-program-changes` | `LISTEN_PROGRAM_CHANGES` | enabled | Enable or completely disable Program Change listening |
-| `--cc-source PORT` | `CC_TARGET_PORT` | `system:midi_capture_4` | JACK source for mapped CC messages |
+| `--cc-source PORT` | `CC_TARGET_PORT` | `@alias:LCXL3-1-MIDI-Out` | JACK source for mapped CC messages |
 | `--cc-channel N` | `CC_CHANNEL` | `2` | MIDI channel for mapped CC messages, 1–16 |
 | `--send-controller-messages` / `--no-controller-messages` | `SEND_CONTROLLER_MESSAGES` | enabled | Enable or disable SL88 sync and LCXL setup messages |
 | `--no-midi-connect` | — | disabled | Disable all automatic MIDI wiring and leave the loader idle |
@@ -183,28 +183,26 @@ Command-line options override environment variables, which override the built-in
 Both source options accept either a full JACK port name or a case-insensitive JACK alias substring:
 
 ```bash
+--program-source "@alias:SL-CTRL"
 --program-source system:midi_capture_1
---program-source "@alias:SL88"
 
+--cc-source "@alias:LCXL3-1-MIDI-Out"
 --cc-source system:midi_capture_4
---cc-source "@alias:Launch Control XL3"
 ```
 
-Use `jack_lsp -A` to inspect aliases. Choose alias text that uniquely identifies the desired MIDI source port.
+Use `jack_lsp -A` to inspect aliases. Choose alias text that uniquely identifies the desired MIDI source port. Defaults use aliases so port indices can change across reboots without reconfiguration.
 
-Explicit Raspberry Pi configuration:
+Explicit Raspberry Pi configuration (same as defaults):
 
 ```bash
 python3 load_single.py \
   --program-changes \
-  --program-source "@alias:SL88" \
-  --cc-source "@alias:Launch Control XL3" \
+  --program-source "@alias:SL-CTRL" \
+  --cc-source "@alias:LCXL3-1-MIDI-Out" \
   --cc-channel 2 \
   --send-controller-messages \
   jsons/plus.json
 ```
-
-This is equivalent to the normal Pi defaults, except that aliases are used instead of fixed JACK port names.
 
 **Environment variables:**
 
@@ -214,9 +212,9 @@ This is equivalent to the normal Pi defaults, except that aliases are used inste
 | `MOD_PORT` | `5555` | mod-host TCP port |
 | `MOD_TIMEOUT` | `5.0` | Socket timeout (seconds) |
 | `ROUTER_STATE` | `/var/lib/router/last_state.json` | Persisted last active instrument |
-| `PROGRAM_TARGET_PORT` | `system:midi_capture_1` | JACK source for Program Change messages; accepts `@alias:text` |
+| `PROGRAM_TARGET_PORT` | `@alias:SL-CTRL` | JACK source for Program Change messages; accepts `@alias:text` |
 | `LISTEN_PROGRAM_CHANGES` | `1` | Enable Program Change input; set to `0` to disable |
-| `CC_TARGET_PORT` | `system:midi_capture_4` | JACK source for mapped CC messages; accepts `@alias:text` |
+| `CC_TARGET_PORT` | `@alias:LCXL3-1-MIDI-Out` | JACK source for mapped CC messages; accepts `@alias:text` |
 | `CC_CHANNEL` | `2` | MIDI channel for mapped CC messages (1–16) |
 | `SEND_CONTROLLER_MESSAGES` | `1` | Send SL88 sync and LCXL setup; set to `0` to disable |
 

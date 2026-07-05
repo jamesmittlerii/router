@@ -70,7 +70,7 @@ STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 # Which JACK MIDI source to tap for Program Changes
 PROGRAM_TARGET_PORT = os.environ.get(
-    "PROGRAM_TARGET_PORT", "system:midi_capture_1"
+    "PROGRAM_TARGET_PORT", "@alias:SL-CTRL"
 )
 LISTEN_PROGRAM_CHANGES = os.environ.get(
     "LISTEN_PROGRAM_CHANGES", "1"
@@ -79,7 +79,7 @@ FILTER_CHANNEL = None  # Set to 0-15 to filter by channel, or None for all
 
 # MIDI CC input defaults (1-based MIDI channel, matches controller display).
 # Override with environment variables or command-line flags.
-CC_TARGET_PORT = os.environ.get("CC_TARGET_PORT", "system:midi_capture_4")
+CC_TARGET_PORT = os.environ.get("CC_TARGET_PORT", "@alias:LCXL3-1-MIDI-Out")
 CC_CHANNEL = int(os.environ.get("CC_CHANNEL", str(COMMON_CHANNEL)))  # 1-16
 SEND_CONTROLLER_MESSAGES = os.environ.get(
     "SEND_CONTROLLER_MESSAGES", "1"
@@ -1424,7 +1424,7 @@ def load_pedalboard_from_argv() -> tuple[
         help=(
             "JACK MIDI source for Program Change messages. Accepts a full port"
             " name or @alias:text. Default: PROGRAM_TARGET_PORT or"
-            " system:midi_capture_1."
+            " @alias:SL-CTRL."
         ),
     )
     program_group = parser.add_mutually_exclusive_group()
@@ -1446,7 +1446,8 @@ def load_pedalboard_from_argv() -> tuple[
         default=CC_TARGET_PORT,
         help=(
             "JACK MIDI source for mapped CC messages. Accepts a full port name"
-            " or @alias:text. Default: CC_TARGET_PORT or system:midi_capture_4."
+            " or @alias:text. Default: CC_TARGET_PORT or"
+            " @alias:LCXL3-1-MIDI-Out."
         ),
     )
     parser.add_argument(

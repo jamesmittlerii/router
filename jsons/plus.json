@@ -454,79 +454,79 @@
   },
   "connections": [
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "10:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "11:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "12:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "13:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "14:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "15:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "16:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "17:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "18:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "19:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "20:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "21:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "22:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "24:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "26:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "27:midi_in"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "28:midi"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "29:control"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "23:MIDI_IN"
     },
     {
@@ -538,7 +538,7 @@
       "to": "35:in_r"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "30:MIDI_IN"
     },
     {
@@ -550,7 +550,7 @@
       "to": "35:in_r"
     },
     {
-      "from": "system:midi_capture_1",
+      "from": "@alias:SL-CTRL",
       "to": "25:midi"
     },
     {
